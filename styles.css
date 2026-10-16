@@ -1,62 +1,67 @@
-/* Carteira de Vales — visual 1.3.0
+/* Ciclo — identidade 1.4.0
+   Paleta: petróleo (marca), menta (realce), âmbar (o dia do crédito: usado com parcimônia).
    Layout: coluna única (máx. 720px) entre uma barra superior translúcida e uma barra de abas fixa;
-   cartão de saldo escuro no topo, listas em superfícies brancas com divisórias finas, folhas que sobem de baixo. */
+   cartão de saldo petróleo no topo, listas em superfícies brancas com divisórias finas, folhas que sobem de baixo. */
 
 @font-face {
-  font-family: "Plus Jakarta Sans";
+  font-family: "Outfit";
   font-style: normal;
-  font-weight: 400 800;
+  font-weight: 300 800;
   font-display: swap;
-  src: url("fonts/plus-jakarta-sans-latin.woff2") format("woff2");
+  src: url("fonts/outfit-latin.woff2") format("woff2");
 }
 
 :root {
-  --bg: #f5f6f8;
+  --bg: #f3f7f7;
   --surface: #ffffff;
-  --sunk: #f0f2f5;
+  --sunk: #ecf2f2;
   --raised: #ffffff;
-  --fg: #101828;
-  --muted: #667085;
-  --faint: #98a2b3;
-  --line: #e7e9ee;
-  --accent: #0a7c5a;
-  --accent-strong: #08664a;
+  --fg: #0c2a30;
+  --muted: #5b7076;
+  --faint: #93a6aa;
+  --line: #e0e9ea;
+  --accent: #0e5e6e;
+  --accent-strong: #0b4c59;
   --accent-fg: #ffffff;
-  --accent-soft: #e8f5ef;
-  --ink: #0d1f18;
-  --ink-2: #163a2c;
-  --ink-fg: #f3f7f5;
-  --good: #067647;
+  --accent-soft: #e2f4f1;
+  --mint: #7fe0d0;
+  --amber: #ffb547;
+  --amber-fg: #4a2d00;
+  --ink: #0b3a44;
+  --ink-2: #0e5463;
+  --ink-fg: #f1fbfa;
+  --good: #0b7f68;
   --bad: #d92d20;
   --bad-soft: #fef3f2;
   --warn-bg: #fffaeb;
   --warn-line: #fedf89;
   --warn-fg: #7a2e0e;
-  --info-bg: #ecfdf3;
+  --info-bg: #e9f6f4;
   --t-alim: #0a7c5a;
   --t-ref: #c4320a;
   --t-flex: #4e3fd8;
   --t-outro: #475467;
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, .05);
-  --shadow: 0 1px 2px rgba(16, 24, 40, .04), 0 6px 20px rgba(16, 24, 40, .06);
-  --shadow-lg: 0 12px 40px rgba(16, 24, 40, .16);
+  --shadow-sm: 0 1px 2px rgba(12, 42, 48, .05);
+  --shadow: 0 1px 2px rgba(12, 42, 48, .04), 0 6px 20px rgba(12, 42, 48, .07);
+  --shadow-lg: 0 12px 40px rgba(12, 42, 48, .18);
   --r-sm: 10px;
   --r: 14px;
   --r-lg: 20px;
   --ease: cubic-bezier(.2, .8, .2, 1);
   --spring: cubic-bezier(.32, 1.25, .5, 1);
-  --f: "Plus Jakarta Sans", Roboto, "Segoe UI", system-ui, sans-serif;
+  --f: "Outfit", Roboto, "Segoe UI", system-ui, sans-serif;
   --bar-h: 64px;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0b0f0e; --surface: #131917; --sunk: #1a211f; --raised: #1c2422;
-    --fg: #eef2f0; --muted: #97a59f; --faint: #6c7a74; --line: #242d2a;
-    --accent: #3ccf97; --accent-strong: #5edbab; --accent-fg: #03140d; --accent-soft: #10271e;
-    --ink: #10251c; --ink-2: #1b3d2f; --ink-fg: #eef6f2;
-    --good: #47d394; --bad: #f97066; --bad-soft: #2a1513;
-    --warn-bg: #2a2110; --warn-line: #5a4415; --warn-fg: #fbd38d; --info-bg: #10271e;
+    --bg: #081417; --surface: #0f1f23; --sunk: #15282d; --raised: #172c31;
+    --fg: #e9f4f3; --muted: #93abae; --faint: #66808a; --line: #1f3439;
+    --accent: #7fe0d0; --accent-strong: #a3eadf; --accent-fg: #062a30; --accent-soft: #10302f;
+    --mint: #7fe0d0; --amber: #ffb547; --amber-fg: #3a2300;
+    --ink: #0d3b45; --ink-2: #13586a; --ink-fg: #effbf9;
+    --good: #5fd9b6; --bad: #f97066; --bad-soft: #2a1513;
+    --warn-bg: #2a2110; --warn-line: #5a4415; --warn-fg: #fbd38d; --info-bg: #10302f;
     --t-alim: #12855f; --t-ref: #c2410c; --t-flex: #5b4ee0; --t-outro: #536173;
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .28);
@@ -96,8 +101,9 @@ h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px));
 }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.brand-mark { width: 30px; height: 30px; border-radius: 9px; background: var(--accent); color: var(--accent-fg); display: grid; place-items: center; flex: none; }
-.brand-name { font-weight: 800; font-size: 17px; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand-mark { width: 32px; height: 32px; border-radius: 10px; background: #0e4f5c; display: grid; place-items: center; flex: none; }
+.brand-mark svg { width: 24px; height: 24px; }
+.brand-name { font-weight: 700; font-size: 20px; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topright { display: flex; gap: 6px; align-items: center; }
 .pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 700; transition: transform .15s var(--ease); }
 .pill.accent { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
@@ -135,7 +141,12 @@ body.hide-values #eyeBtn .eye-off { display: block; }
   background: radial-gradient(120% 140% at 100% 0%, var(--ink-2) 0%, var(--ink) 60%);
   box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 4px;
 }
-.hero::after { content: ""; position: absolute; inset: auto -60px -90px auto; width: 220px; height: 220px; border-radius: 50%; background: radial-gradient(circle, rgba(60, 207, 151, .22), transparent 70%); pointer-events: none; }
+/* o anel do símbolo Ciclo, grande e sutil, atrás do saldo */
+.hero::after {
+  content: ""; position: absolute; right: -54px; top: -54px; width: 190px; height: 190px; border-radius: 50%; pointer-events: none;
+  border: 18px solid rgba(127, 224, 208, .14); border-left-color: transparent;
+}
+.hero::before { content: ""; position: absolute; right: 34px; top: 22px; width: 14px; height: 14px; border-radius: 50%; background: var(--amber); box-shadow: 0 0 0 6px rgba(255, 181, 71, .16); pointer-events: none; }
 .hero .label { color: color-mix(in srgb, var(--ink-fg) 65%, transparent); }
 .hero .big { font-size: clamp(34px, 9.5vw, 44px); font-weight: 800; line-height: 1.08; letter-spacing: -0.035em; }
 .hero .sub { font-size: 13.5px; color: color-mix(in srgb, var(--ink-fg) 72%, transparent); }

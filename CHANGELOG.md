@@ -1,4 +1,6 @@
-# Histórico de versões
+# Ciclo · histórico de versões
+
+*Do crédito ao próximo crédito.* Até a versão 1.3.0 o app se chamava "Carteira de Vales".
 
 O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
@@ -7,6 +9,22 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 - **PATCH:** só correção ou ajuste pequeno.
 
 A versão em uso aparece em **Ajustes**, no rodapé.
+
+## 1.4.0 — 16/10/2026
+
+### Novo
+- **Identidade visual "Ciclo":** o app passa a se chamar Ciclo, com a frase "do crédito ao próximo crédito".
+  - **Símbolo:** um anel aberto (o período entre dois créditos) com um ponto âmbar marcando o dia em que o crédito cai.
+  - **Cores:** petróleo como cor da marca, menta para os realces e âmbar como destaque pontual. No modo escuro, a menta vira a cor principal.
+  - **Fonte:** Outfit, embutida no app (funciona offline).
+  - **Ícone:** novo, também na versão para o recorte redondo do Android. A tela de abertura do app instalado fica em petróleo.
+  - **Cartão de saldo:** ganha o anel e o ponto âmbar do símbolo.
+- Os backups novos se chamam `ciclo-backup-AAAA-MM-DD.json`.
+
+### Compatibilidade
+- Os dados guardados no celular e os backups feitos nas versões anteriores continuam funcionando sem nenhuma ação.
+- O endereço do app continua o mesmo.
+- Num celular com o app já instalado, o ícone e o nome novos podem levar alguns dias para aparecer na tela inicial. Isso depende do Android. Desinstalar e instalar de novo resolve na hora, mas faça um backup antes.
 
 ## 1.3.0 — 16/10/2026
 
