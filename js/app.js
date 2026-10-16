@@ -20,7 +20,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.3.0";
+  const APP_VERSION = "1.4.0";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -560,7 +560,7 @@
       </div>
       ${hasCrypto && S.meta.vault ? `<div class="section-head"><h2>Cofre</h2></div><div class="menu"><button data-act="m-master"><span class="t">Trocar senha mestra</span><span class="s">Recriptografa todas as senhas guardadas.</span></button></div>` : ""}
       ${S.installEvt ? `<div class="menu"><button data-act="install"><span class="t">Instalar o app</span><span class="s">Ícone na tela inicial, tela cheia e uso sem internet.</span></button></div>` : ""}
-      <p class="foot num">Carteira de Vales · versão ${APP_VERSION}</p>`;
+      <p class="foot num">Ciclo · do crédito ao próximo crédito · versão ${APP_VERSION}</p>`;
   }
 
   // ---------- botão + ----------
@@ -1686,11 +1686,11 @@
           if ($("bkPhotos").checked) {
             for (const r of await IDB.all("receipts")) data.receipts.push({ id: r.id, createdAt: r.createdAt, data: await blobToDataURL(r.blob) });
           }
-          const name = `carteira-vales-backup-${todayISO()}.json`;
+          const name = `ciclo-backup-${todayISO()}.json`;
           const file = new File([JSON.stringify(data)], name, { type: "application/json" });
           let shared = false;
           if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            try { await navigator.share({ files: [file], title: "Backup Carteira de Vales" }); shared = true; }
+            try { await navigator.share({ files: [file], title: "Backup do Ciclo" }); shared = true; }
             catch (e) { if (e.name === "AbortError") { $("bkGo").disabled = false; $("bkGo").textContent = "Gerar arquivo"; return; } }
           }
           if (!shared) {
@@ -1714,7 +1714,7 @@
   async function importFile(file) {
     let data;
     try { data = JSON.parse(await file.text()); } catch (e) { toast("Este arquivo não é um backup válido."); return; }
-    if (!data || data.app !== "carteira-vales" || !Array.isArray(data.cards) || !Array.isArray(data.txs)) { toast("Este arquivo não é um backup da Carteira de Vales."); return; }
+    if (!data || data.app !== "carteira-vales" || !Array.isArray(data.cards) || !Array.isArray(data.txs)) { toast("Este arquivo não é um backup do Ciclo."); return; }
     const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString("pt-BR") : "data desconhecida";
     confirmSheet("Restaurar backup?", `O backup de <b>${esc(when)}</b> tem ${data.cards.length} cartões e ${data.txs.length} lançamentos. Os dados atuais deste celular serão <b>substituídos</b>.`, "Restaurar", async () => {
       const ok = await run(async () => {
