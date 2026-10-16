@@ -1,0 +1,92 @@
+# Ciclo
+
+*Do crédito ao próximo crédito.*
+
+Ciclo controla o saldo dos cartões de vale-alimentação, vale-refeição e multibenefício da família (VR, Alelo, Pluxee, Ticket, Flash, Caju e outros). É um app web instalável (PWA) para Android: abre pelo navegador, vira ícone na tela inicial e funciona sem internet.
+
+**Abrir o app:** https://jessicadopke.github.io/ciclo/
+
+## O que o app faz
+
+- **Cartões de várias pessoas:** cada cartão tem titular, emissor e final. A tela inicial tem filtro por pessoa e, com muitos cartões, lista compacta com busca e grupos por titular.
+- **Crédito fixo ou variável:**
+  - O valor e o dia do crédito podem ser fixos ou variar.
+  - Cada período vai de um crédito até o seguinte.
+  - O app mostra quanto dá para gastar por dia útil até o próximo crédito e avisa quando o crédito previsto ainda não foi registrado.
+- **Cupom fiscal por foto:**
+  - O texto é lido no próprio celular, sem internet (Tesseract).
+  - O app encontra o valor pago, o saldo impresso, a data, a loja, o emissor e o final do cartão.
+  - O cartão que pagou é identificado pelo final, pelo saldo impresso ou pela loja onde ele já foi usado.
+- **Pagamento dividido:** uma compra pode usar vários vales e também crédito, débito, Pix ou dinheiro.
+- **Extrato:** com busca e com os totais de gastos e créditos.
+- **Cofre de senhas:** a senha do cartão e o login do app do emissor ficam criptografados (AES-256-GCM, chave derivada da senha mestra com PBKDF2). O cofre tranca sozinho.
+- **Privacidade:** o botão de olho esconde os valores. O tema pode ser automático, claro ou escuro.
+- **Backup e restauração:** por arquivo. As senhas continuam criptografadas dentro dele.
+
+## Onde ficam os dados
+
+Tudo fica **só no celular** (IndexedDB do navegador): cartões, extratos, fotos e senhas. Este site entrega apenas o programa, e nenhum dado pessoal passa por aqui. Por isso:
+
+- **Faça backup** em **Ajustes → Fazer backup** e guarde o arquivo, por exemplo no Google Drive.
+- Para trocar de celular, restaure o backup em **Ajustes → Restaurar backup**.
+- Se esquecer a senha mestra do cofre, as senhas guardadas não podem ser recuperadas.
+
+## Instalar no Android
+
+1. Abra https://jessicadopke.github.io/ciclo/ no **Chrome**.
+2. Toque em **Instalar** no topo do app, ou no menu ⋮ do Chrome → **Instalar app**.
+3. Abra uma vez com internet. Depois disso funciona offline, inclusive a leitura de cupons.
+
+Tocando e segurando o ícone aparecem os atalhos **Ler cupom** e **Lançar gasto**.
+
+## Dicas para a foto do cupom
+
+- Fotografe o cupom reto, inteiro e com boa luz.
+- Sempre confira o valor e o saldo com o papel antes de salvar.
+- Em "Ver texto lido da foto" você vê o que o app conseguiu ler.
+- As fotos são guardadas reduzidas e em tons de cinza. Em **Ajustes → Fotos dos cupons** dá para apagar as antigas sem perder os lançamentos.
+
+## Estrutura do projeto
+
+O app é HTML, CSS e JavaScript puros, sem etapa de build. O que está neste repositório é exatamente o que o GitHub Pages publica.
+
+```
+index.html            página do app
+styles.css            visual (identidade Ciclo, temas claro e escuro)
+manifest.webmanifest  nome, ícones e cores do app instalado
+sw.js                 service worker: guarda o app para uso offline
+js/app.js             telas, cartões, períodos, cofre, backup
+js/receipt.js         leitura do cupom (OCR) e interpretação do texto
+fonts/                fonte Outfit, embutida
+icons/                ícones do app (inclui a versão "maskable" do Android)
+vendor/tesseract/     Tesseract.js 5.1.1 e o modelo de português, embutidos
+CHANGELOG.md          histórico de versões
+```
+
+## Versões
+
+O projeto segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`). As mudanças de cada versão estão no [CHANGELOG](CHANGELOG.md), e a versão em uso aparece no rodapé de **Ajustes**.
+
+Para publicar uma versão nova:
+
+1. Atualize `APP_VERSION` em `js/app.js` e `VERSION` em `sw.js`.
+2. Escreva a entrada nova no `CHANGELOG.md`.
+3. Envie os arquivos alterados para a branch `main`. O GitHub Pages publica em 1 ou 2 minutos.
+4. Crie uma *release* com a tag `vX.Y.Z`.
+
+No celular, a versão nova é baixada sozinha na próxima vez que o app abrir com internet.
+
+## Testar no computador
+
+Nesta pasta, rode:
+
+```
+python -m http.server 8765
+```
+
+Depois abra http://localhost:8765 no Chrome. O cofre e a instalação só funcionam em `localhost` ou em https.
+
+## Créditos
+
+- Leitura de texto: [Tesseract.js](https://github.com/naptha/tesseract.js) (licença Apache 2.0).
+- Fonte: [Outfit](https://fonts.google.com/specimen/Outfit) (SIL Open Font License).

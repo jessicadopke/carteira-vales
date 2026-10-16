@@ -10,6 +10,27 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
 A versão em uso aparece em **Ajustes**, no rodapé.
 
+## 1.5.0 — 16/10/2026
+
+### Novo
+- **Tema:** em Ajustes → Aparência → Tema dá para escolher Automático (segue o celular), Claro ou Escuro. A escolha vale para este celular e é aplicada antes de a tela aparecer, sem piscar.
+- **README** no repositório, com o que o app faz, como instalar e como publicar uma versão nova.
+
+### Mudou
+- **Tudo passa a se chamar Ciclo:**
+  - repositório `jessicadopke/ciclo`;
+  - endereço https://jessicadopke.github.io/ciclo/;
+  - banco de dados interno `ciclo`;
+  - backups marcados como `ciclo`.
+- **O endereço antigo** (`/carteira-vales/`) deixa de funcionar.
+
+### Compatibilidade
+- Se o banco antigo (`carteira-vales`) existir no celular, os dados são copiados para o novo na primeira abertura, e o app avisa "Seus dados foram trazidos da versão anterior".
+- Backups feitos em versões anteriores continuam podendo ser restaurados.
+
+### Removido
+- Arquivos que sobraram no repositório: a fonte antiga (Plus Jakarta Sans) e os arquivos vazios usados para criar pastas.
+
 ## 1.4.0 — 16/10/2026
 
 ### Novo

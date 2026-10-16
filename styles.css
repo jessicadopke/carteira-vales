@@ -53,8 +53,9 @@
   --bar-h: 64px;
   color-scheme: light;
 }
+/* Tema: segue o celular (automático) ou o que a pessoa escolher em Ajustes (data-theme no <html>) */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #081417; --surface: #0f1f23; --sunk: #15282d; --raised: #172c31;
     --fg: #e9f4f3; --muted: #93abae; --faint: #66808a; --line: #1f3439;
     --accent: #7fe0d0; --accent-strong: #a3eadf; --accent-fg: #062a30; --accent-soft: #10302f;
@@ -68,6 +69,20 @@
     --shadow-lg: 0 12px 40px rgba(0, 0, 0, .5);
     color-scheme: dark;
   }
+}
+:root[data-theme="dark"] {
+  --bg: #081417; --surface: #0f1f23; --sunk: #15282d; --raised: #172c31;
+  --fg: #e9f4f3; --muted: #93abae; --faint: #66808a; --line: #1f3439;
+  --accent: #7fe0d0; --accent-strong: #a3eadf; --accent-fg: #062a30; --accent-soft: #10302f;
+  --mint: #7fe0d0; --amber: #ffb547; --amber-fg: #3a2300;
+  --ink: #0d3b45; --ink-2: #13586a; --ink-fg: #effbf9;
+  --good: #5fd9b6; --bad: #f97066; --bad-soft: #2a1513;
+  --warn-bg: #2a2110; --warn-line: #5a4415; --warn-fg: #fbd38d; --info-bg: #10302f;
+  --t-alim: #12855f; --t-ref: #c2410c; --t-flex: #5b4ee0; --t-outro: #536173;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 20px rgba(0, 0, 0, .28);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, .5);
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -427,6 +442,8 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; background: va
 .menu .t { font-weight: 700; }
 .menu .s { font-size: 12.5px; color: var(--muted); grid-column: 1; }
 .menu button:disabled { opacity: .5; }
+.menu button[aria-pressed="true"] { background: var(--accent-soft); }
+.menu button[aria-pressed="true"] .t { color: var(--accent); }
 .foot { text-align: center; color: var(--faint); font-size: 12px; }
 
 /* ---------- toast ---------- */
