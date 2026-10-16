@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b6e4f" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f1613" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Saldo dos cartões de vale-alimentação, refeição e multibenefício da família, com leitura de cupom fiscal e cofre de senhas.">
+<title>Carteira de Vales</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="top">
+    <div class="brand"><div class="brand-mark">V</div><h1>Carteira de Vales</h1></div>
+    <div class="topright">
+      <button class="pill accent" id="installBtn" hidden>Instalar app</button>
+      <button class="pill" id="vaultBtn" hidden><span class="dot"></span><span id="vaultLbl">Cofre</span></button>
+      <button class="pill" id="menuBtn" aria-label="Mais opções">Mais</button>
+    </div>
+  </div>
+  <div id="view"><div class="empty">Carregando…</div></div>
+</div>
+<div class="fabs" id="fabs" hidden>
+  <button class="fab alt" id="fabScan">Ler cupom</button>
+  <button class="fab" id="fabTx">+ Gasto</button>
+</div>
+<input type="file" id="fileIn" accept="image/*" multiple hidden>
+<input type="file" id="importIn" accept="application/json,.json" hidden>
+<div id="sheetRoot"></div>
+<div id="toastRoot"></div>
+<script src="vendor/tesseract/tesseract.min.js" defer></script>
+<script src="js/receipt.js" defer></script>
+<script src="js/app.js" defer></script>
+</body>
+</html>
