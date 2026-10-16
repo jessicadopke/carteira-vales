@@ -8,6 +8,15 @@
     outro: { label: "Outro voucher", color: "var(--t-outro)" },
   };
   const ISSUERS = ["VR", "Alelo", "Pluxee (Sodexo)", "Ticket", "Flash", "Caju", "iFood Benefícios", "Swile", "Ben", "Outro"];
+  // Cor e sigla de cada emissor (só para reconhecer o cartão de relance; não são logotipos)
+  const ISSUER_STYLE = {
+    "VR": { c: "#0a8f3c", s: "VR" }, "Alelo": { c: "#5b8f00", s: "AL" }, "Pluxee (Sodexo)": { c: "#2b2a8c", s: "PX" },
+    "Ticket": { c: "#c8102e", s: "TK" }, "Flash": { c: "#d6246e", s: "FL" }, "Caju": { c: "#e4572e", s: "CJ" },
+    "iFood Benefícios": { c: "#b8121f", s: "IF" }, "Swile": { c: "#5b3fd1", s: "SW" }, "Ben": { c: "#0f6fa8", s: "BN" }, "Outro": { c: "#55657a", s: "••" },
+  };
+  const issuerStyle = c => ISSUER_STYLE[c.issuer] || ISSUER_STYLE.Outro;
+  const fold = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const MANY = 12; // a partir daqui os grupos por titular começam fechados
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   const LOCK_MS = 5 * 60 * 1000;
@@ -117,7 +126,12 @@
           for (const s of ["cards", "txs", "receipts"]) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: "id" });
           if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta");
         };
-        r.onsuccess = () => { IDB.db = r.result; res(); };
+        r.onsuccess = () => {
+          IDB.db = r.result;
+          // Outra aba ou atualização precisa do banco: solta a conexão e recarrega, em vez de travar as duas.
+          IDB.db.onversionchange = () => { IDB.db.close(); location.reload(); };
+          res();
+        };
         r.onerror = () => rej(r.error);
       });
     },
@@ -155,7 +169,7 @@
   // ---------- estado ----------
   const S = {
     cards: [], txs: [], meta: {}, loaded: false,
-    view: { name: "home" }, person: null, periodOffset: 0, busy: false, skipped: new Set(),
+    view: { name: "home" }, person: null, periodOffset: 0, busy: false, skipped: new Set(), cardQuery: "", groups: {},
     key: null, plain: {}, plainSig: {}, reveal: new Set(), lockTimer: null, installEvt: null,
   };
   const $ = id => document.getElementById(id);
@@ -307,16 +321,178 @@
         <span class="sub num">${cards.length} ${cards.length === 1 ? "cartão" : "cartões"} · gasto em ${MONTHS[new Date().getMonth()]}: ${brl(spent)}</span>
       </section>
       ${peopleBar}
-      ${renderNotices(pendingCredits(cards))}
+      ${renderCreditNotices(pendingCredits(cards))}
       ${backupWarn}
-      <section class="cards">
-        ${cards.map(c => renderTile(c, true)).join("")}
-        <button class="cardtile add" data-act="new-card">+ Adicionar cartão</button>
-      </section>
+      ${renderCardToolbar()}
+      <div id="cardArea">${renderCardArea()}</div>
       <section class="panel">
         <div class="panel-head"><h2>Últimos lançamentos</h2><span class="label">${S.person !== null ? esc(S.person || "sem titular") : "todos os cartões"}</span></div>
         ${renderTxList(recent, true)}
       </section>`;
+  }
+
+  // ---------- lista de cartões: busca, grupos por titular, cartões ou lista ----------
+  const layoutNow = () => S.meta.layout || (S.cards.length > 6 ? "list" : "grid");
+  function renderCardToolbar() {
+    if (S.cards.length < 4) return "";
+    const list = layoutNow() === "list";
+    return `
+      <div class="toolbar">
+        <input id="cardSearch" class="search" type="search" placeholder="Buscar cartão, titular, emissor ou final" value="${esc(S.cardQuery)}" autocomplete="off" aria-label="Buscar cartão">
+        <button class="btn small" data-act="layout">${list ? "Ver como cartões" : "Ver em lista"}</button>
+      </div>`;
+  }
+  function matchesQuery(c, q) {
+    if (!q) return true;
+    const hay = fold([c.name, c.holder, c.issuer, c.last4, (TYPES[c.type] || TYPES.outro).label].join(" "));
+    return fold(q).split(/\s+/).filter(Boolean).every(w => hay.includes(w));
+  }
+  function groupOpen(h) {
+    if (h in S.groups) return S.groups[h];
+    return S.cards.length <= MANY;
+  }
+  function renderCardArea() {
+    const q = S.cardQuery.trim();
+    const cards = visibleCards().filter(c => matchesQuery(c, q));
+    const list = layoutNow() === "list";
+    const draw = cs => list
+      ? `<div class="cardlist">${cs.map(renderRow).join("")}</div>`
+      : `<section class="cards">${cs.map(c => renderTile(c, true)).join("")}</section>`;
+    const addBtn = `<button class="btn" data-act="new-card">+ Adicionar cartão</button>`;
+    if (!cards.length) return `<div class="empty">Nenhum cartão encontrado para “${esc(q)}”.</div><div class="btnrow">${addBtn}</div>`;
+    const people = [...new Set(cards.map(c => c.holder || ""))];
+    if (q || S.person !== null || people.length < 2) {
+      return `${draw(cards)}<div class="btnrow">${addBtn}</div>`;
+    }
+    return people.map(h => {
+      const cs = cards.filter(c => (c.holder || "") === h);
+      const open = groupOpen(h);
+      const sum = cs.reduce((s, c) => s + (c.balance || 0), 0);
+      return `
+        <section class="grp">
+          <button class="grp-head" data-act="grp" data-h="${esc(h)}" aria-expanded="${open}">
+            <span class="gname">${esc(h || "Sem titular")}</span>
+            <span class="gmeta num">${cs.length} ${cs.length === 1 ? "cartão" : "cartões"} · ${brl(sum)}</span>
+            <span class="chev" aria-hidden="true">${open ? "▴" : "▾"}</span>
+          </button>
+          ${open ? draw(cs) : ""}
+        </section>`;
+    }).join("") + `<div class="btnrow">${addBtn}</div>`;
+  }
+  function renderRow(c) {
+    const st = issuerStyle(c);
+    const ci = creditInfo(c);
+    const perDay = ci ? `${brl(Math.max(0, ci.workdays > 0 ? Math.floor((c.balance || 0) / ci.workdays) : c.balance || 0))}/dia útil` : (TYPES[c.type] || TYPES.outro).label;
+    return `
+      <button class="cardrow" data-act="open-card" data-id="${c.id}">
+        <span class="badge" style="background:${st.c}">${esc(st.s)}</span>
+        <span class="rinfo"><span class="rname">${esc(c.name)}</span><span class="rsub num">${esc([c.holder, c.last4 ? "final " + c.last4 : ""].filter(Boolean).join(" · "))}${c.holder || c.last4 ? " · " : ""}${perDay}</span></span>
+        <span class="rbal num">${brl(c.balance || 0)}</span>
+      </button>`;
+  }
+
+  // ---------- avisos de crédito: um a um ou em lote ----------
+  function renderCreditNotices(list) {
+    if (list.length <= 1) return renderNotices(list);
+    const total = list.reduce((s, { c }) => s + (c.monthlyCredit || 0), 0);
+    return `
+      <div class="notice">
+        <span><b>${list.length} cartões</b> têm crédito previsto neste período (<span class="num">${brl(total)}</span> no total). Já caíram?</span>
+        <span class="actions">
+          <button class="btn small primary" data-act="credit-batch">Revisar e registrar</button>
+          <button class="btn small ghost" data-act="credit-later">Depois</button>
+        </span>
+      </div>`;
+  }
+  function creditBatchSheet() {
+    const list = pendingCredits(visibleCards());
+    if (!list.length) return;
+    openSheet(`
+      <h3>Registrar créditos</h3>
+      <p class="hint">Desmarque os cartões cujo crédito ainda não caiu. Você pode ajustar o valor de cada um.</p>
+      <div class="btnrow"><button class="btn small" type="button" id="cbAll">Marcar todos</button><button class="btn small" type="button" id="cbNone">Desmarcar todos</button></div>
+      <form id="cbForm" class="sform">
+        <div class="chklist">
+          ${list.map(({ c, ci }) => `
+            <label class="chkrow">
+              <input type="checkbox" data-id="${c.id}" checked>
+              <span class="rinfo"><span class="rname">${esc(c.name)}</span><span class="rsub">${esc(c.holder || "sem titular")} · ${MONTHS[ci.period.start.getMonth()]}, dia ${esc(c.creditDay)}</span></span>
+              <input class="num amt" inputmode="decimal" data-amt="${c.id}" value="${fmtInput(c.monthlyCredit)}" aria-label="Valor do crédito de ${esc(c.name)}">
+            </label>`).join("")}
+        </div>
+        <div class="err" id="cbErr"></div>
+        <div class="btnrow"><button class="btn primary" type="submit" id="cbGo">Registrar marcados</button><button class="btn" type="button" data-close>Cancelar</button></div>
+      </form>`, sheet => {
+      const boxes = [...sheet.querySelectorAll('input[type="checkbox"][data-id]')];
+      const sync = () => { const n = boxes.filter(b => b.checked).length; $("cbGo").textContent = n ? `Registrar ${n} ${n === 1 ? "crédito" : "créditos"}` : "Nada marcado"; $("cbGo").disabled = !n; };
+      boxes.forEach(b => b.addEventListener("change", sync));
+      $("cbAll").addEventListener("click", () => { boxes.forEach(b => b.checked = true); sync(); });
+      $("cbNone").addEventListener("click", () => { boxes.forEach(b => b.checked = false); sync(); });
+      sync();
+      $("cbForm").addEventListener("submit", async e => {
+        e.preventDefault();
+        const chosen = [];
+        for (const b of boxes.filter(b => b.checked)) {
+          const v = parseMoney(sheet.querySelector(`[data-amt="${b.dataset.id}"]`).value);
+          if (!(v > 0)) { $("cbErr").textContent = "Há um valor de crédito inválido. Use o formato 800,00."; return; }
+          chosen.push({ id: b.dataset.id, v });
+        }
+        $("cbGo").disabled = true;
+        const ok = await run(async () => {
+          for (const { id, v } of chosen) {
+            const card = cardById(id); const ci = card && creditInfo(card);
+            if (!ci) continue;
+            await postTxs(card, [{ kind: "credit", amount: v, desc: `Crédito de ${MONTHS[ci.period.start.getMonth()]}`, date: ci.period.startISO }]);
+            await Store.patch("cards", id, { lastCreditMonth: ci.period.key });
+          }
+        }, `${chosen.length} ${chosen.length === 1 ? "crédito registrado" : "créditos registrados"}.`);
+        if (ok) closeSheet(); else $("cbGo").disabled = false;
+      });
+    });
+  }
+
+  // ---------- seletor de cartão com busca ----------
+  function pickLabel(c) {
+    if (!c) return "Escolher cartão";
+    const st = issuerStyle(c);
+    return `<span class="badge sm" style="background:${st.c}">${esc(st.s)}</span><span class="rinfo"><span class="rname">${esc(c.name)}</span><span class="rsub num">${esc([c.holder, c.last4 ? "final " + c.last4 : ""].filter(Boolean).join(" · "))} · ${brl(c.balance || 0)}</span></span><span class="chev" aria-hidden="true">▾</span>`;
+  }
+  function cardPickerHTML(id, selId) {
+    return `
+      <input type="hidden" id="${id}" value="${esc(selId || "")}">
+      <div class="picker">
+        <button type="button" class="pick-btn" id="${id}Btn" aria-expanded="false">${pickLabel(cardById(selId))}</button>
+        <div class="pick-panel" id="${id}Panel" hidden>
+          <input class="search" id="${id}Q" type="search" placeholder="Buscar por nome, titular, emissor ou final" autocomplete="off" aria-label="Buscar cartão">
+          <div class="pick-list" id="${id}List" role="listbox"></div>
+        </div>
+      </div>`;
+  }
+  // suggestions: [{card, reasons}] mostrados no topo da lista
+  function wirePicker(id, suggestions = []) {
+    const hidden = $(id), btn = $(id + "Btn"), panel = $(id + "Panel"), q = $(id + "Q"), listEl = $(id + "List");
+    const item = (c, why) => `<button type="button" class="pick-item ${c.id === hidden.value ? "sel" : ""}" data-pick="${c.id}" role="option" aria-selected="${c.id === hidden.value}">${pickLabel(c).replace(/<span class="chev".*$/, "")}${why ? `<span class="why">${esc(why)}</span>` : ""}</button>`;
+    const draw = () => {
+      const term = q.value.trim();
+      const cs = sortedCards().filter(c => matchesQuery(c, term));
+      const sug = term ? [] : suggestions.filter(s => s.reasons.length).slice(0, 3);
+      listEl.innerHTML =
+        (sug.length ? `<div class="label pick-sec">Sugeridos</div>${sug.map(s => item(s.card, s.reasons.join(" · "))).join("")}<div class="label pick-sec">Todos os cartões</div>` : "") +
+        (cs.length ? cs.map(c => item(c)).join("") : `<div class="empty">Nenhum cartão encontrado.</div>`);
+    };
+    btn.addEventListener("click", () => {
+      const open = panel.hidden;
+      panel.hidden = !open; btn.setAttribute("aria-expanded", String(open));
+      if (open) { q.value = ""; draw(); q.focus(); }
+    });
+    q.addEventListener("input", draw);
+    listEl.addEventListener("click", e => {
+      const b = e.target.closest("[data-pick]"); if (!b) return;
+      hidden.value = b.dataset.pick;
+      btn.innerHTML = pickLabel(cardById(hidden.value));
+      panel.hidden = true; btn.setAttribute("aria-expanded", "false");
+      hidden.dispatchEvent(new Event("input", { bubbles: true }));
+    });
   }
 
   function renderTile(c, clickable) {
@@ -493,9 +669,6 @@
   });
   document.addEventListener("keydown", e => { if (e.key === "Escape" && $("scrim")) closeSheet(); });
 
-  function cardOptions(sel) {
-    return sortedCards().map(c => `<option value="${c.id}" ${c.id === sel ? "selected" : ""}>${esc(c.name)}${c.holder ? " · " + esc(c.holder) : ""} — ${brl(c.balance || 0)}</option>`).join("");
-  }
   function catButtons(cur) { return CATS.map(c => `<button type="button" data-cat="${c}" aria-pressed="${c === cur}">${c}</button>`).join(""); }
   function wireCats(sheet, state) {
     sheet.querySelectorAll(".cats button").forEach(b => b.addEventListener("click", () => {
@@ -515,7 +688,7 @@
       </div>
       <form id="txForm" class="sform">
         <label class="field"><span>Valor</span><input id="txAmount" class="money num" inputmode="decimal" placeholder="0,00" autocomplete="off" autofocus></label>
-        <label class="field"><span>Cartão</span><select id="txCard">${cardOptions(sel)}</select></label>
+        <div class="field"><span>Cartão</span>${cardPickerHTML("txCard", sel)}</div>
         <div class="field" id="catField"><span>Categoria</span><div class="cats">${catButtons("")}</div></div>
         <label class="field"><span>Descrição (opcional)</span><input id="txDesc" maxlength="60" placeholder="Ex.: almoço no restaurante da esquina"></label>
         <label class="field"><span>Data</span><input id="txDate" type="date" value="${todayISO()}"></label>
@@ -529,6 +702,7 @@
       };
       sheet.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => { state.kind = b.dataset.k; sync(); }));
       wireCats(sheet, state);
+      wirePicker("txCard");
       sync();
       $("txForm").addEventListener("submit", async e => {
         e.preventDefault();
@@ -759,14 +933,16 @@
   }
 
   // ---------- cupom fiscal ----------
-  // Foto guardada: lado maior ≤ 1600 px, JPEG.
-  async function shrink(file, max = 1600, q = 0.8) {
+  // Foto guardada: lado maior ≤ 1280 px, tons de cinza, JPEG leve (~60–150 KB), ainda legível para conferir o cupom.
+  async function shrink(file, max = 1280, q = 0.6) {
     try {
       const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
       const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
       const cv = document.createElement("canvas");
       cv.width = Math.round(bmp.width * scale); cv.height = Math.round(bmp.height * scale);
-      cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
+      const ctx = cv.getContext("2d");
+      ctx.filter = "grayscale(1) contrast(1.15)";
+      ctx.drawImage(bmp, 0, 0, cv.width, cv.height);
       return (await new Promise(r => cv.toBlob(r, "image/jpeg", q))) || file;
     } catch (e) { return file; }
   }
@@ -813,39 +989,67 @@
     }
   }
 
-  function matchCard(d, presetCardId) {
-    if (d) {
-      if (d.last4) { const m = S.cards.filter(c => c.last4 === d.last4); if (m.length === 1) return m[0].id; }
-      if (d.issuer) {
-        const m = S.cards.filter(c => c.issuer === d.issuer);
-        if (presetCardId && m.some(c => c.id === presetCardId)) return presetCardId;
-        if (m.length === 1) return m[0].id;
-      }
+  // Chave da loja: CNPJ do cupom ou, sem ele, o nome normalizado.
+  const storeKeyOf = d => d && d.cnpj ? "cnpj:" + d.cnpj : d && d.store ? "loja:" + fold(d.store).replace(/[^a-z0-9]/g, "").slice(0, 24) : null;
+  const descKey = s => "loja:" + fold(s).replace(/[^a-z0-9]/g, "").slice(0, 24);
+
+  // Pontua cada cartão como provável pagador do cupom. Sinais, do mais forte ao mais fraco:
+  // final do cartão, saldo impresso que fecha com o saldo daqui, loja onde o cartão já foi usado, emissor, tipo.
+  function rankCards(d, amount, saldoAfter, presetCardId) {
+    const key = storeKeyOf(d);
+    const nameKey = d && d.store ? descKey(d.store) : null;
+    const used = {};
+    if (key || nameKey) for (const t of S.txs) {
+      if (t.kind !== "debit") continue;
+      if ((key && t.storeKey === key) || (nameKey && descKey(t.desc || "") === nameKey)) used[t.cardId] = (used[t.cardId] || 0) + 1;
     }
-    return presetCardId || defaultCardId();
+    return S.cards.map(c => {
+      let score = 0; const reasons = [];
+      if (d && d.last4 && c.last4 === d.last4) { score += 100; reasons.push("final " + c.last4); }
+      if (saldoAfter !== null && saldoAfter >= 0) {
+        const bal = c.balance || 0;
+        if (amount > 0 && Math.abs(bal - amount - saldoAfter) <= 1) { score += 90; reasons.push("o saldo do cupom fecha com este cartão"); }
+        else if (Math.abs(bal - saldoAfter) <= 1) { score += 50; reasons.push("saldo igual ao do cupom"); }
+      }
+      if (used[c.id]) { score += Math.min(45, 15 * used[c.id]); reasons.push(used[c.id] === 1 ? "já usado nesta loja" : `usado ${used[c.id]} vezes nesta loja`); }
+      if (d && d.issuer && c.issuer === d.issuer) { score += 20; reasons.push(d.issuer); }
+      if (d && d.category) {
+        if (d.category === "Mercado" && c.type === "alimentacao") score += 5;
+        if (["Restaurante", "Lanche", "Padaria", "Delivery"].includes(d.category) && c.type === "refeicao") score += 5;
+      }
+      if (c.id === presetCardId) score += 30;
+      return { card: c, score, reasons };
+    }).sort((a, b) => b.score - a.score || (a.card.createdAt || 0) - (b.card.createdAt || 0));
   }
 
   function reviewForm(sheet, blob, presetCardId, d, msg, rawText) {
     if (!sheet.querySelector("#scanBody")) return;
     d = d || {};
-    const cardId = matchCard(d, presetCardId);
     const amount = d.paid > 0 ? d.paid : null;
     let saldo = typeof d.balance === "number" ? d.balance : null;
     if (saldo !== null && d.balanceMoment === "antes_compra" && amount) saldo -= amount;
+    const ranked = rankCards(d, amount || 0, saldo, presetCardId);
+    const top = ranked[0];
+    const confident = top && top.score >= 50 && (!ranked[1] || top.score - ranked[1].score >= 20);
+    const cardId = top && top.score > 0 ? top.card.id : (presetCardId || defaultCardId());
+    const suggestLine = top && top.reasons.length
+      ? `<span>Cartão ${confident ? "identificado" : "provável"}: <b>${esc(top.card.name)}</b>${top.card.holder ? ` (${esc(top.card.holder)})` : ""} · ${esc(top.reasons.join(", "))}${confident ? "" : " (confira o cartão)"}</span>`
+      : (S.cards.length > 1 ? `<span>Não consegui identificar o cartão pelo cupom. Escolha abaixo.</span>` : "");
     const date = d.date || todayISO();
     const state = { cat: d.category || "", dupOk: false };
     const summary = d.found && d.found.length ? `
       <div class="found">
         <span><b>Encontrado no cupom:</b> ${esc(d.found.join(", "))}${d.issuer ? ` · ${esc(d.issuer)}` : ""}${d.last4 ? ` final ${esc(d.last4)}` : ""}</span>
         <span>${saldo !== null ? `Saldo do cartão impresso: <b class="num">${brl(saldo)}</b>${d.balanceMoment === "antes_compra" ? " (já descontada esta compra)" : ""}` : "O cupom não mostra o saldo do cartão."}</span>
+        ${suggestLine}
         <span class="hint">Confira os valores com o papel antes de salvar.</span>
-      </div>` : "";
+      </div>` : (suggestLine ? `<div class="found">${suggestLine}</div>` : "");
     sheet.querySelector("#scanBody").outerHTML = `
       ${msg ? `<div class="notice">${esc(msg)}</div>` : ""}
       ${summary}
       <form id="rForm" class="sform">
         <label class="field"><span>Valor pago com o cartão</span><input id="rAmount" class="money num" inputmode="decimal" placeholder="0,00" value="${amount ? fmtInput(amount) : ""}"></label>
-        <label class="field"><span>Cartão</span><select id="rCard">${cardOptions(cardId)}</select></label>
+        <div class="field"><span>Cartão</span>${cardPickerHTML("rCard", cardId)}</div>
         <div class="grid2">
           <label class="field"><span>Estabelecimento</span><input id="rDesc" maxlength="60" value="${esc(d.store || "")}"></label>
           <label class="field"><span>Data</span><input id="rDate" type="date" value="${date}"></label>
@@ -863,6 +1067,7 @@
     const pre = sheet.querySelector("details.raw pre");
     if (pre) pre.textContent = rawText;
     wireCats(sheet, state);
+    wirePicker("rCard", ranked);
     const syncUse = () => {
       const card = cardById($("rCard").value);
       const s = parseMoney($("rSaldo").value);
@@ -906,7 +1111,8 @@
         const receiptId = uid();
         await IDB.put("receipts", { id: receiptId, blob, createdAt: Date.now() });
         const list = [];
-        if (a > 0) list.push({ kind: "debit", amount: a, desc: $("rDesc").value.trim() || state.cat || "Compra", cat: state.cat, date: dt, source: "cupom", receiptId, ...(s >= 0 ? { reportedBalance: s } : {}) });
+        const storeKey = storeKeyOf({ cnpj: d.cnpj, store: $("rDesc").value.trim() || d.store });
+        if (a > 0) list.push({ kind: "debit", amount: a, desc: $("rDesc").value.trim() || state.cat || "Compra", cat: state.cat, date: dt, source: "cupom", receiptId, ...(storeKey ? { storeKey } : {}), ...(s >= 0 ? { reportedBalance: s } : {}) });
         if (useBal) {
           const diff = s - ((card.balance || 0) - (a > 0 ? a : 0));
           if (diff !== 0) list.push({ kind: diff > 0 ? "credit" : "debit", amount: Math.abs(diff), desc: "Ajuste pelo saldo do cupom", source: "ajuste", date: dt, ...(a > 0 ? {} : { receiptId }) });
@@ -940,6 +1146,7 @@
       <div class="menu">
         <button data-m="backup"><span class="t">Fazer backup</span><span class="s">Gera um arquivo com cartões, extratos e senhas (as senhas continuam criptografadas).</span></button>
         <button data-m="import"><span class="t">Restaurar backup</span><span class="s">Substitui os dados deste celular pelos do arquivo.</span></button>
+        <button data-m="photos"><span class="t">Fotos dos cupons</span><span class="s">Ver quanto espaço ocupam e apagar fotos antigas (os lançamentos continuam).</span></button>
         ${hasCrypto && S.meta.vault ? `<button data-m="master"><span class="t">Trocar senha mestra do cofre</span><span class="s">Recriptografa todas as senhas guardadas.</span></button>` : ""}
         <button data-m="about"><span class="t">Sobre o armazenamento</span><span class="s">Onde ficam os dados e como não perder nada.</span></button>
       </div>
@@ -949,7 +1156,39 @@
         if (m === "backup") backupSheet();
         else if (m === "import") { closeSheet(); $("importIn").click(); }
         else if (m === "master") changeMasterSheet();
+        else if (m === "photos") photosSheet();
         else aboutSheet();
+      }));
+    });
+  }
+
+  async function photosSheet() {
+    const recs = await IDB.all("receipts");
+    const dateOf = {};
+    for (const t of S.txs) if (t.receiptId) dateOf[t.receiptId] = t.date;
+    const mb = b => (b / 1048576).toFixed(1).replace(".", ",") + " MB";
+    const total = recs.reduce((s, r) => s + (r.blob ? r.blob.size : 0), 0);
+    const olderThan = months => {
+      const lim = new Date(); lim.setMonth(lim.getMonth() - months);
+      const iso = isoDay(lim);
+      return recs.filter(r => (dateOf[r.id] || isoDay(new Date(r.createdAt || 0))) < iso);
+    };
+    const opts = [3, 6, 12].map(m => ({ m, list: olderThan(m) }));
+    openSheet(`
+      <h3>Fotos dos cupons</h3>
+      <p><b class="num">${recs.length}</b> ${recs.length === 1 ? "foto ocupa" : "fotos ocupam"} <b class="num">${mb(total)}</b> neste celular.</p>
+      <p class="hint">Apagar fotos não mexe nos lançamentos nem nos saldos; só some o botão “foto” do extrato. Faça backup com fotos antes, se quiser guardá-las.</p>
+      <div class="menu">
+        ${opts.map(o => `<button data-del="${o.m}" ${o.list.length ? "" : "disabled"}><span class="t">Apagar fotos com mais de ${o.m} meses</span><span class="s num">${o.list.length} ${o.list.length === 1 ? "foto" : "fotos"} · ${mb(o.list.reduce((s, r) => s + (r.blob ? r.blob.size : 0), 0))}</span></button>`).join("")}
+      </div>
+      <div class="btnrow"><button class="btn" data-close>Fechar</button></div>`, sheet => {
+      sheet.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
+        const o = opts.find(x => x.m === +b.dataset.del);
+        confirmSheet("Apagar fotos antigas?", `${o.list.length} ${o.list.length === 1 ? "foto de cupom com mais de " + o.m + " meses será apagada" : "fotos de cupons com mais de " + o.m + " meses serão apagadas"}. Os lançamentos continuam.`, "Apagar fotos", () => run(async () => {
+          const ids = new Set(o.list.map(r => r.id));
+          for (const id of ids) await IDB.del("receipts", id);
+          for (const t of S.txs.filter(t => ids.has(t.receiptId))) await Store.patch("txs", t.id, { receiptId: null });
+        }, "Fotos apagadas."));
       }));
     });
   }
@@ -1088,7 +1327,21 @@
         break;
       }
       case "credit-skip": S.skipped.add(id); render(); break;
+      case "credit-batch": creditBatchSheet(); break;
+      case "credit-later": pendingCredits(visibleCards()).forEach(({ c }) => S.skipped.add(c.id)); render(); break;
+      case "layout": {
+        const next = layoutNow() === "list" ? "grid" : "list";
+        await run(() => Store.setMeta({ ...S.meta, layout: next }));
+        break;
+      }
+      case "grp": { const h = el.dataset.h; S.groups[h] = !groupOpen(h); $("cardArea").innerHTML = renderCardArea(); break; }
     }
+  });
+  // A busca redesenha só a lista de cartões, para o teclado não fechar a cada letra.
+  document.addEventListener("input", e => {
+    if (e.target.id !== "cardSearch") return;
+    S.cardQuery = e.target.value;
+    $("cardArea").innerHTML = renderCardArea();
   });
   document.addEventListener("keydown", touchVault);
   $("fabTx").addEventListener("click", () => txSheet(S.view.name === "card" ? S.view.id : null, "debit"));

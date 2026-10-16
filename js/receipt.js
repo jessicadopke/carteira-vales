@@ -126,7 +126,7 @@
   function parse(text) {
     const raw = String(text || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const lines = raw.map(norm);
-    const res = { store: null, date: null, total: null, paid: null, balance: null, balanceMoment: "desconhecido", issuer: null, last4: null, category: null, found: [] };
+    const res = { store: null, cnpj: null, date: null, total: null, paid: null, balance: null, balanceMoment: "desconhecido", issuer: null, last4: null, category: null, found: [] };
 
     // Data (primeira data válida que não está no futuro)
     const today = new Date();
@@ -184,6 +184,9 @@
 
     // Emissor e final do cartão
     const all = lines.join("\n");
+    // CNPJ da loja (o primeiro do cupom é o do emitente): serve para lembrar qual cartão é usado em cada loja
+    const cn = all.match(/CNPJ[^\d\n]{0,8}(\d{2}\.?\d{3}\.?\d{3}\s?\/?\s?\d{4}\s?-?\s?\d{2})/);
+    if (cn) { const digits = cn[1].replace(/\D/g, ""); if (digits.length === 14) res.cnpj = digits; }
     for (const [re, name] of ISSUER_RULES) if (re.test(all)) { res.issuer = name; break; }
     const l4 = all.match(/(?:[*X]{4}[\s.-]*){1,3}(\d{4})\b|\*{2,}\s*(\d{4})\b|FINAL\s*:?\s*(\d{4})\b|CARTAO\s*:?\s*[*X\d\s]{6,}?(\d{4})\b/);
     if (l4) res.last4 = l4[1] || l4[2] || l4[3] || l4[4];
