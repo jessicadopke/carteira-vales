@@ -20,7 +20,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.2.0";
+  const APP_VERSION = "1.3.0";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -246,7 +246,7 @@
   // ---------- estado ----------
   const S = {
     cards: [], txs: [], meta: {}, loaded: false,
-    view: { name: "home" }, person: null, periodOffset: 0, busy: false, skipped: new Set(), cardQuery: "", groups: {},
+    view: { name: "home" }, tab: "home", person: null, periodOffset: 0, busy: false, skipped: new Set(), cardQuery: "", groups: {}, txQuery: "", txLimit: 100,
     key: null, plain: {}, plainSig: {}, reveal: new Set(), lockTimer: null, installEvt: null,
   };
   const $ = id => document.getElementById(id);
@@ -332,22 +332,42 @@
     if (changed) render();
   }
   function renderTop() {
-    const b = $("vaultBtn");
-    b.hidden = !hasCrypto || !S.loaded;
-    b.classList.toggle("open", !!S.key);
-    $("vaultLbl").textContent = !S.meta.vault ? "Cofre de senhas" : S.key ? "Cofre aberto" : "Cofre trancado";
+    $("lockBtn").hidden = !S.key;
     $("installBtn").hidden = !S.installEvt;
+    const hide = !!S.meta.hideValues;
+    document.body.classList.toggle("hide-values", hide);
+    $("eyeBtn").setAttribute("aria-pressed", String(hide));
+    $("eyeBtn").setAttribute("aria-label", hide ? "Mostrar valores" : "Esconder valores");
+    $("tabbar").hidden = !S.loaded;
+    const tab = S.view.name === "card" ? "home" : S.tab;
+    document.querySelectorAll(".tab").forEach(t => t.toggleAttribute("aria-current", t.dataset.tab === tab));
+    document.querySelectorAll(".tab[aria-current]").forEach(t => t.setAttribute("aria-current", "page"));
   }
 
   // ---------- renderização ----------
   function render() {
     const view = $("view");
     renderTop();
-    $("fabs").hidden = !S.loaded || S.cards.length === 0;
     if (!S.loaded) return;
     if (S.view.name === "card" && cardById(S.view.id)) view.innerHTML = renderCard(cardById(S.view.id));
-    else { S.view = { name: "home" }; view.innerHTML = renderHome(); }
+    else {
+      S.view = { name: "home" };
+      view.innerHTML = S.tab === "extrato" ? renderExtrato() : S.tab === "cofre" ? renderCofre() : S.tab === "ajustes" ? renderAjustes() : renderHome();
+    }
     if (S.cards.length) decryptCards();
+  }
+  // Troca de tela com transição: animação nativa do Chrome quando existe, senão entrada suave dos blocos.
+  const reduceMotion = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function navigate(fn, dir = "fade") {
+    const vt = !!document.startViewTransition && !reduceMotion();
+    const apply = () => {
+      fn(); window.scrollTo(0, 0);
+      if (vt) return;
+      const v = $("view"); v.classList.remove("enter"); void v.offsetWidth; v.classList.add("enter");
+      clearTimeout(navigate.t); navigate.t = setTimeout(() => v.classList.remove("enter"), 700);
+    };
+    if (vt) { document.documentElement.dataset.nav = dir; document.startViewTransition(apply); }
+    else apply();
   }
 
   // Cartões cujo crédito já deveria ter caído e ainda não foi registrado.
@@ -418,7 +438,7 @@
         <span class="label">Comece por aqui</span>
         <h2>Cadastre os cartões de benefício da família</h2>
         <p>Cadastre cada cartão com o titular, o emissor (VR, Alelo, Pluxee, Ticket, Flash, Caju…) e o saldo de hoje. Depois lance as compras à mão ou tire foto do cupom fiscal: o app lê o valor e, quando o comprovante traz o saldo do cartão, corrige o saldo daqui.</p>
-        <p>Tudo fica guardado só neste celular. Faça backup de vez em quando pelo botão “Mais”.</p>
+        <p>Tudo fica guardado só neste celular. Faça backup de vez em quando em Ajustes.</p>
         <div class="btnrow"><button class="btn primary" data-act="new-card">+ Adicionar primeiro cartão</button><button class="btn" data-act="import">Restaurar backup</button></div>
       </div>`;
     }
@@ -438,21 +458,139 @@
       </div>` : "";
     const backupWarn = S.txs.length >= 10 && (!S.meta.lastBackup || Date.now() - S.meta.lastBackup > 30 * 86400000)
       ? `<div class="notice info"><span>${S.meta.lastBackup ? "Seu último backup tem mais de 30 dias." : "Você ainda não fez backup."} Se o celular for perdido ou formatado, os dados vão junto.</span><span class="actions"><button class="btn small primary" data-act="backup">Fazer backup</button></span></div>` : "";
+    const credited = S.txs.filter(t => ids.has(t.cardId) && isBenefitCredit(t) && (t.date || "").startsWith(mk)).reduce((s, t) => s + t.amount, 0);
     return `
-      <section class="total">
+      <section class="hero">
         <span class="label">Saldo disponível${S.person !== null ? " · " + esc(S.person || "sem titular") : ""}</span>
         <span class="big num">${brl(total)}</span>
-        <span class="sub num">${cards.length} ${cards.length === 1 ? "cartão" : "cartões"} · gasto em ${MONTHS[new Date().getMonth()]}: ${brl(spent)}</span>
+        <span class="sub num">${cards.length} ${cards.length === 1 ? "cartão" : "cartões"}${people.length > 1 && S.person === null ? ` de ${people.length} pessoas` : ""}</span>
+        <div class="hero-stats">
+          <div><span class="k">Gasto em ${MONTHS[new Date().getMonth()]}</span><span class="v num">${brl(spent)}</span></div>
+          <div><span class="k">Créditos recebidos</span><span class="v num">${brl(credited)}</span></div>
+        </div>
       </section>
       ${peopleBar}
       ${renderCreditNotices(pendingCredits(cards))}
       ${backupWarn}
       ${renderCardToolbar()}
       <div id="cardArea">${renderCardArea()}</div>
+      <div class="section-head"><h2>Últimos lançamentos</h2><button class="btn small ghost" data-act="tab" data-tab="extrato">Ver extrato</button></div>
       <section class="panel">
-        <div class="panel-head"><h2>Últimos lançamentos</h2><span class="label">${S.person !== null ? esc(S.person || "sem titular") : "todos os cartões"}</span></div>
         ${renderTxList(recent, true)}
       </section>`;
+  }
+
+  // ---------- ícones ----------
+  const svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+  const ICON = {
+    gasto: svg('<path d="M7 17 17 7M9 7h8v8"/>'),
+    credito: svg('<path d="M17 7 7 17M15 17H7V9"/>'),
+    cupom: svg('<path d="M4 8a2 2 0 0 1 2-2h1.5l1.5-2h6l1.5 2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><circle cx="12" cy="12.5" r="3.5"/>'),
+    corrigir: svg('<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'),
+    cartao: svg('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h4"/>'),
+  };
+
+  // ---------- aba Extrato ----------
+  function renderExtrato() {
+    if (!S.cards.length) return renderHome();
+    return `
+      <h1 class="page-title">Extrato</h1>
+      <div class="toolbar"><input id="txSearch" class="search" type="search" placeholder="Buscar loja, categoria, cartão, titular ou valor" value="${esc(S.txQuery)}" autocomplete="off" aria-label="Buscar no extrato"></div>
+      <div id="txArea">${renderTxArea()}</div>`;
+  }
+  function renderTxArea() {
+    const words = fold(S.txQuery.trim()).split(/\s+/).filter(Boolean);
+    const list = S.txs.filter(t => {
+      if (!words.length) return true;
+      const c = cardById(t.cardId);
+      const hay = fold([t.desc, t.cat, c && c.name, c && c.holder, c && c.issuer, fmtInput(t.amount), (t.date || "").split("-").reverse().join("/"), t.kind === "credit" ? "credito" : "gasto"].join(" "));
+      return words.every(w => hay.includes(w));
+    }).sort(txSort);
+    const spent = list.filter(t => t.kind === "debit" && t.source !== "ajuste").reduce((s, t) => s + t.amount, 0);
+    const got = list.filter(isBenefitCredit).reduce((s, t) => s + t.amount, 0);
+    const shown = list.slice(0, S.txLimit);
+    return `
+      <div class="tots">
+        <div class="tot"><span class="k">Gastos</span><span class="v num">${brl(spent)}</span></div>
+        <div class="tot"><span class="k">Créditos</span><span class="v num in">${brl(got)}</span></div>
+      </div>
+      <section class="panel">${list.length ? renderTxList(shown, true) : `<div class="empty">Nada encontrado para “${esc(S.txQuery)}”.</div>`}</section>
+      ${list.length > shown.length ? `<button class="btn more" data-act="more-tx">Mostrar mais (${list.length - shown.length} restantes)</button>` : ""}`;
+  }
+
+  // ---------- aba Cofre ----------
+  function renderCofre() {
+    let state;
+    if (!hasCrypto) state = `<div class="notice">O cofre só funciona com o app instalado ou aberto pelo endereço https.</div>`;
+    else if (!S.meta.vault) state = `
+      <div class="hero-empty">
+        <span class="label">Cofre de senhas</span>
+        <h2>Guarde as senhas dos cartões com segurança</h2>
+        <p>A senha de cada cartão e o login do app do emissor ficam criptografados neste celular com uma senha mestra que só você sabe.</p>
+        <div class="btnrow"><button class="btn primary" data-act="vault">Criar cofre</button></div>
+      </div>`;
+    else state = `
+      <section class="panel">
+        <div class="panel-head"><h2>${S.key ? "Cofre aberto" : "Cofre trancado"}</h2>${S.key ? `<button class="btn small" data-act="lock">Trancar</button>` : `<button class="btn small primary" data-act="vault">Abrir cofre</button>`}</div>
+        <p class="hint">${S.key ? "O cofre tranca sozinho depois de 5 minutos sem uso ou quando você sai do app." : "Abra com a senha mestra para ver ou editar as senhas dos cartões."}</p>
+      </section>`;
+    const rows = sortedCards().map(c => `<button data-act="edit-secrets" data-id="${c.id}"><span class="t">${esc(c.name)}${c.holder ? ` · ${esc(c.holder)}` : ""}</span><span class="s">${c.secret ? "Senhas guardadas" : "Nenhuma senha guardada"}</span></button>`).join("");
+    return `
+      <h1 class="page-title">Cofre</h1>
+      ${state}
+      ${hasCrypto && S.meta.vault && S.cards.length ? `<div class="section-head"><h2>Cartões</h2></div><div class="menu">${rows}</div>` : ""}`;
+  }
+
+  // ---------- aba Ajustes ----------
+  function renderAjustes() {
+    const list = layoutNow() === "list";
+    return `
+      <h1 class="page-title">Ajustes</h1>
+      <div class="section-head"><h2>Seus dados</h2></div>
+      <div class="menu">
+        <button data-act="m-backup"><span class="t">Fazer backup</span><span class="s">Arquivo com cartões, extratos e senhas (as senhas continuam criptografadas).</span></button>
+        <button data-act="import"><span class="t">Restaurar backup</span><span class="s">Substitui os dados deste celular pelos do arquivo.</span></button>
+        <button data-act="m-photos"><span class="t">Fotos dos cupons</span><span class="s">Espaço usado e limpeza de fotos antigas.</span></button>
+        <button data-act="m-about"><span class="t">Onde ficam os dados</span><span class="s">Como não perder nada ao trocar de celular.</span></button>
+      </div>
+      <div class="section-head"><h2>Aparência</h2></div>
+      <div class="menu">
+        <button data-act="layout"><span class="t">Mostrar cartões ${list ? "como cartões" : "em lista"}</span><span class="s">Agora: ${list ? "lista compacta" : "cartões grandes"}.</span></button>
+        <button data-act="eye"><span class="t">${S.meta.hideValues ? "Mostrar valores" : "Esconder valores"}</span><span class="s">O mesmo que o botão de olho no topo.</span></button>
+      </div>
+      ${hasCrypto && S.meta.vault ? `<div class="section-head"><h2>Cofre</h2></div><div class="menu"><button data-act="m-master"><span class="t">Trocar senha mestra</span><span class="s">Recriptografa todas as senhas guardadas.</span></button></div>` : ""}
+      ${S.installEvt ? `<div class="menu"><button data-act="install"><span class="t">Instalar o app</span><span class="s">Ícone na tela inicial, tela cheia e uso sem internet.</span></button></div>` : ""}
+      <p class="foot num">Carteira de Vales · versão ${APP_VERSION}</p>`;
+  }
+
+  // ---------- botão + ----------
+  function actionSheet() {
+    if (!S.cards.length) { cardSheet(null); return; }
+    const cardId = S.view.name === "card" ? S.view.id : null;
+    $("plusBtn").classList.add("open");
+    openSheet(`
+      <h3>Novo lançamento</h3>
+      <div class="actions-grid">
+        <button class="qa primary" data-q="gasto">${ICON.gasto}Gasto</button>
+        <button class="qa" data-q="cupom">${ICON.cupom}Ler cupom</button>
+        <button class="qa" data-q="credito">${ICON.credito}Crédito</button>
+        <button class="qa" data-q="cartao">${ICON.cartao}Cartão</button>
+      </div>`, sheet => {
+      sheetCleanup = () => $("plusBtn").classList.remove("open");
+      sheet.querySelectorAll("[data-q]").forEach(b => b.addEventListener("click", () => {
+        const q = b.dataset.q;
+        if (q === "cupom") { closeSheet(); S.scanCard = cardId; $("fileIn").click(); }
+        else if (q === "gasto") txSheet(cardId, "debit");
+        else if (q === "credito") txSheet(cardId, "credit");
+        else cardSheet(null);
+      }));
+    });
+  }
+  function goTab(t) {
+    if (t === S.tab && S.view.name !== "card") { window.scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" }); return; }
+    navigate(() => { S.tab = t; S.view = { name: "home" }; render(); });
+    const st = history.state || {};
+    if (t !== "home") whenHistoryIdle(() => st.tab ? history.replaceState({ tab: t }, "") : history.pushState({ tab: t }, ""));
   }
 
   // ---------- lista de cartões: busca, grupos por titular, cartões ou lista ----------
@@ -630,7 +768,7 @@
     }
     const attrs = clickable ? `data-act="open-card" data-id="${c.id}"` : `tabindex="-1" aria-disabled="true"`;
     return `
-      <button class="cardtile ${clickable ? "" : "static"}" style="--tc:${t.color}" ${attrs}>
+      <button class="cardtile ${clickable ? "" : "static"}" style="--tc:${issuerStyle(c).c}" ${attrs}>
         <div class="row">
           <div><div class="issuer">${esc(c.issuer || "")}${c.last4 ? ` · final ${esc(c.last4)}` : ""}</div><div class="name">${esc(c.name)}</div>${c.holder ? `<div class="holder">${esc(c.holder)}</div>` : ""}</div>
           <span class="chip">${esc(t.label)}</span>
@@ -659,7 +797,7 @@
           const sub = [t.cat, t.source === "cupom" ? "via cupom" : "", part, who].filter(Boolean).join(" · ") || (t.kind === "credit" ? "Crédito" : "Gasto");
           const ic = t.source === "ajuste" ? "±" : t.kind === "credit" ? "+" : (t.cat || t.desc || "?").slice(0, 2);
           return `
-          <div class="tx">
+          <div class="tx ${t.kind === "credit" ? "in" : ""}">
             <span class="ic">${esc(ic)}</span>
             <div class="d"><div class="t">${esc(t.desc || (t.kind === "credit" ? "Crédito" : "Compra"))}</div><div class="s">${esc(sub)}</div></div>
             <span class="a num ${t.kind === "credit" ? "in" : ""}">${t.kind === "credit" ? "+" : "−"}${brl(t.amount)}${typeof t.reportedBalance === "number" ? `<span class="rb">saldo no cupom ${brl(t.reportedBalance)}</span>` : ""}</span>
@@ -725,15 +863,17 @@
     }
     const hasEarlier = S.txs.some(t => t.cardId === c.id && t.date < p.startISO);
     return `
-      <button class="back" data-act="home">← Todos os cartões</button>
+      <div class="btnrow" style="justify-content:space-between">
+        <button class="back" data-act="home">← Cartões</button>
+        <button class="btn small" data-act="edit-card" data-id="${c.id}">Editar cartão</button>
+      </div>
       <section class="cards" style="grid-template-columns:1fr">${renderTile(c, false)}</section>
       ${renderNotices(pendingCredits([c]))}
-      <div class="btnrow">
-        <button class="btn primary" data-act="new-tx" data-id="${c.id}" data-kind="debit">Lançar gasto</button>
-        <button class="btn" data-act="scan" data-id="${c.id}">Ler cupom</button>
-        <button class="btn" data-act="new-tx" data-id="${c.id}" data-kind="credit">Adicionar crédito</button>
-        <button class="btn" data-act="adjust" data-id="${c.id}">Corrigir saldo</button>
-        <button class="btn" data-act="edit-card" data-id="${c.id}">Editar</button>
+      <div class="actions-grid">
+        <button class="qa primary" data-act="new-tx" data-id="${c.id}" data-kind="debit">${ICON.gasto}Gasto</button>
+        <button class="qa" data-act="scan" data-id="${c.id}">${ICON.cupom}Ler cupom</button>
+        <button class="qa" data-act="new-tx" data-id="${c.id}" data-kind="credit">${ICON.credito}Crédito</button>
+        <button class="qa" data-act="adjust" data-id="${c.id}">${ICON.corrigir}Corrigir</button>
       </div>
       <section class="panel">
         <div class="panel-head">
@@ -769,25 +909,35 @@
   function goBack() { hist.pending = true; history.back(); }
 
   function openSheet(html, onMount, opts = {}) {
-    closeSheet(true);
+    closeSheet(true, true);
     const root = $("sheetRoot");
     root.innerHTML = `<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
     if (opts.secret) $("scrim").dataset.secret = "1";
     const sheet = root.querySelector(".sheet");
     // Toque fora fecha só janelas sem formulário, para não perder o que foi digitado.
     $("scrim").addEventListener("click", e => { if (e.target.id === "scrim" && !sheet.querySelector("form, #scanBody")) closeSheet(); });
-    sheet.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", closeSheet));
+    sheet.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", () => closeSheet()));
     onMount && onMount(sheet);
     const first = root.querySelector("[autofocus]");
-    first && first.focus();
+    first && first.focus({ preventScroll: true });
     whenHistoryIdle(() => { if ($("scrim") && !(history.state && history.state.sheet)) history.pushState({ sheet: true }, ""); });
     return sheet;
   }
-  function closeSheet(keepHistory) {
+  // keepHistory: não mexe no histórico (o "voltar" já foi usado). instant: troca de folha, sem animação de saída.
+  function closeSheet(keepHistory, instant) {
     if (sheetCleanup) { const f = sheetCleanup; sheetCleanup = null; f(); }
-    const had = !!$("scrim");
-    $("sheetRoot").innerHTML = "";
-    if (had && !keepHistory && !hist.pending && history.state && history.state.sheet) goBack();
+    const scrim = $("scrim");
+    if (scrim) {
+      if (instant || reduceMotion()) scrim.remove();
+      else {
+        // tira os ids antes da animação, para a próxima folha não confundir os campos
+        scrim.removeAttribute("id");
+        scrim.querySelectorAll("[id]").forEach(el => el.removeAttribute("id"));
+        scrim.classList.add("closing");
+        setTimeout(() => scrim.remove(), 240);
+      }
+    }
+    if (scrim && keepHistory !== true && !hist.pending && history.state && history.state.sheet) goBack();
   }
   // Botão "voltar" do Android fecha a folha aberta ou volta para a lista de cartões.
   window.addEventListener("popstate", () => {
@@ -798,7 +948,8 @@
       return;
     }
     if ($("scrim")) { closeSheet(true); return; }
-    if (S.view.name === "card") { S.view = { name: "home" }; render(); }
+    if (S.view.name === "card") { navigate(() => { S.view = { name: "home" }; render(); }, "back"); return; }
+    if (S.tab !== "home" && !(history.state && history.state.tab)) navigate(() => { S.tab = "home"; render(); }, "back");
   });
   document.addEventListener("keydown", e => { if (e.key === "Escape" && $("scrim")) closeSheet(); });
 
@@ -1474,28 +1625,6 @@
   const blobToDataURL = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(b); });
   const dataURLToBlob = async u => (await fetch(u)).blob();
 
-  function menuSheet() {
-    openSheet(`
-      <h3>Mais opções</h3>
-      <div class="menu">
-        <button data-m="backup"><span class="t">Fazer backup</span><span class="s">Gera um arquivo com cartões, extratos e senhas (as senhas continuam criptografadas).</span></button>
-        <button data-m="import"><span class="t">Restaurar backup</span><span class="s">Substitui os dados deste celular pelos do arquivo.</span></button>
-        <button data-m="photos"><span class="t">Fotos dos cupons</span><span class="s">Ver quanto espaço ocupam e apagar fotos antigas (os lançamentos continuam).</span></button>
-        ${hasCrypto && S.meta.vault ? `<button data-m="master"><span class="t">Trocar senha mestra do cofre</span><span class="s">Recriptografa todas as senhas guardadas.</span></button>` : ""}
-        <button data-m="about"><span class="t">Sobre o armazenamento</span><span class="s">Onde ficam os dados e como não perder nada.</span></button>
-      </div>
-      <p class="hint num">Carteira de Vales · versão ${APP_VERSION}</p>
-      <div class="btnrow"><button class="btn" data-close>Fechar</button></div>`, sheet => {
-      sheet.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => {
-        const m = b.dataset.m;
-        if (m === "backup") backupSheet();
-        else if (m === "import") { closeSheet(); $("importIn").click(); }
-        else if (m === "master") changeMasterSheet();
-        else if (m === "photos") photosSheet();
-        else aboutSheet();
-      }));
-    });
-  }
 
   async function photosSheet() {
     const recs = await IDB.all("receipts");
@@ -1605,8 +1734,15 @@
 
   // ---------- eventos ----------
   function openCard(id) {
-    S.view = { name: "card", id }; S.periodOffset = 0; render(); window.scrollTo(0, 0);
+    navigate(() => { S.view = { name: "card", id }; S.periodOffset = 0; render(); }, "forward");
     whenHistoryIdle(() => history.pushState({ card: id }, ""));
+  }
+  async function toggleEye() { await run(() => Store.setMeta({ ...S.meta, hideValues: !S.meta.hideValues })); }
+  async function installApp() {
+    if (!S.installEvt) return;
+    S.installEvt.prompt();
+    await S.installEvt.userChoice.catch(() => null);
+    S.installEvt = null; render();
   }
   document.addEventListener("click", async e => {
     touchVault();
@@ -1618,7 +1754,7 @@
       case "open-card": openCard(id); break;
       case "home":
         if (history.state && history.state.card) history.back();
-        else { S.view = { name: "home" }; render(); }
+        else navigate(() => { S.view = { name: "home" }; render(); }, "back");
         break;
       case "person": S.person = el.dataset.all ? null : el.dataset.p; render(); break;
       case "per": S.periodOffset = Math.min(0, S.periodOffset + Number(el.dataset.d)); render(); break;
@@ -1669,28 +1805,39 @@
         await run(() => Store.setMeta({ ...S.meta, layout: next }));
         break;
       }
-      case "grp": { const h = el.dataset.h; S.groups[h] = !groupOpen(h); $("cardArea").innerHTML = renderCardArea(); break; }
+      case "grp": {
+        const h = el.dataset.h; S.groups[h] = !groupOpen(h); $("cardArea").innerHTML = renderCardArea();
+        if (S.groups[h]) { const g = [...document.querySelectorAll(".grp-head")].find(b => b.dataset.h === h); g && g.parentElement.classList.add("opened"); }
+        break;
+      }
+      case "tab": goTab(el.dataset.tab); break;
+      case "more-tx": S.txLimit += 100; $("txArea").innerHTML = renderTxArea(); break;
+      case "lock": lockVault("Cofre trancado."); break;
+      case "eye": toggleEye(); break;
+      case "install": installApp(); break;
+      case "m-backup": backupSheet(); break;
+      case "m-photos": photosSheet(); break;
+      case "m-about": aboutSheet(); break;
+      case "m-master": changeMasterSheet(); break;
     }
   });
-  // A busca redesenha só a lista de cartões, para o teclado não fechar a cada letra.
+  // As buscas redesenham só a própria lista, para o teclado não fechar a cada letra.
   document.addEventListener("input", e => {
-    if (e.target.id !== "cardSearch") return;
-    S.cardQuery = e.target.value;
-    $("cardArea").innerHTML = renderCardArea();
+    if (e.target.id === "cardSearch") { S.cardQuery = e.target.value; $("cardArea").innerHTML = renderCardArea(); }
+    else if (e.target.id === "txSearch") { S.txQuery = e.target.value; S.txLimit = 100; $("txArea").innerHTML = renderTxArea(); }
   });
   document.addEventListener("keydown", touchVault);
-  $("fabTx").addEventListener("click", () => txSheet(S.view.name === "card" ? S.view.id : null, "debit"));
-  $("fabScan").addEventListener("click", () => { S.scanCard = S.view.name === "card" ? S.view.id : null; $("fileIn").click(); });
+  $("tabbar").addEventListener("click", e => {
+    const t = e.target.closest(".tab");
+    if (t) goTab(t.dataset.tab);
+  });
+  $("plusBtn").addEventListener("click", actionSheet);
+  $("eyeBtn").addEventListener("click", toggleEye);
+  $("lockBtn").addEventListener("click", () => lockVault("Cofre trancado."));
   $("fileIn").addEventListener("change", e => { const files = e.target.files; if (files && files.length) startScan(files, S.scanCard); e.target.value = ""; });
   $("importIn").addEventListener("change", e => { const f = e.target.files && e.target.files[0]; if (f) importFile(f); e.target.value = ""; });
-  $("vaultBtn").addEventListener("click", () => { if (S.key) lockVault("Cofre trancado."); else vaultSheet(); });
-  $("menuBtn").addEventListener("click", menuSheet);
-  $("installBtn").addEventListener("click", async () => {
-    if (!S.installEvt) return;
-    S.installEvt.prompt();
-    await S.installEvt.userChoice.catch(() => null);
-    S.installEvt = null; renderTop();
-  });
+  $("installBtn").addEventListener("click", installApp);
+  window.addEventListener("scroll", () => $("appbar").classList.toggle("scrolled", window.scrollY > 4), { passive: true });
   window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); S.installEvt = e; renderTop(); });
   window.addEventListener("appinstalled", () => { S.installEvt = null; renderTop(); toast("App instalado."); });
   document.addEventListener("visibilitychange", () => { if (document.hidden) lockVault(); });
