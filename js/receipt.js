@@ -182,6 +182,34 @@
     }
     res.paid = paid !== null ? paid : res.total;
 
+    // Todas as formas de pagamento da NFC-e (pode haver vários vales, cartão, Pix e dinheiro na mesma compra).
+    // Com o cabeçalho "FORMA DE PAGAMENTO", lê só as linhas logo abaixo dele; sem ele, procura no cupom todo.
+    const PAY_RULES = [
+      [/VALE ?ALIMENT|VALE ?REFEI|VOUCHER|\bALIMENTACAO\b|\bREFEICAO\b|BENEFICIO|ALELO|PLUXEE|SODEXO|TICKET|\bVR\b|FLASH|CAJU|SWILE|\bVA\b/, "vale"],
+      [/\bPIX\b/, "pix"],
+      [/DINHEIRO|ESPECIE/, "dinheiro"],
+      [/CREDITO/, "credito"],
+      [/DEBITO/, "debito"],
+    ];
+    const head = lines.findIndex(l => /FORMAS? (DE )?PAGAMENTO|FORMA PAGTO|MEIO DE PAGAMENTO/.test(l));
+    const scope = head >= 0 ? lines.slice(head + 1, head + 10) : lines;
+    const payments = [];
+    for (const l of scope) {
+      if (head >= 0 && /TROCO|CONSULTE|CHAVE|PROTOCOLO|TRIBUT/.test(l)) break;
+      if (/SALDO|TROCO|TOTAL|DESCONTO|APROVAD|VIA |SUBTOTAL/.test(l)) continue;
+      const v = amounts(l);
+      if (!v.length) continue;
+      const rule = PAY_RULES.find(([re]) => re.test(l));
+      if (!rule) { if (head >= 0 && /[A-Z]{3}/.test(l)) payments.push({ kind: "outro", amount: v[v.length - 1], label: raw[lines.indexOf(l)] }); continue; }
+      payments.push({ kind: rule[1], amount: v[v.length - 1], label: raw[lines.indexOf(l)] });
+    }
+    // Sem a seção da NFC-e, mantém só um pagamento por tipo para não contar duas vezes o mesmo valor do comprovante.
+    res.payments = head >= 0 ? payments : payments.filter((p, i) => payments.findIndex(q => q.kind === p.kind && q.amount === p.amount) === i);
+    const vales = res.payments.filter(p => p.kind === "vale");
+    if (vales.length > 1) res.paid = vales.reduce((s, p) => s + p.amount, 0);
+    // Todos os saldos impressos (um por comprovante de vale) e todos os finais de cartão
+    res.balances = balCands.map(b => b.before && res.paid ? null : b.v).filter(v => v !== null);
+
     // Emissor e final do cartão
     const all = lines.join("\n");
     // CNPJ da loja (o primeiro do cupom é o do emitente): serve para lembrar qual cartão é usado em cada loja
@@ -190,6 +218,7 @@
     for (const [re, name] of ISSUER_RULES) if (re.test(all)) { res.issuer = name; break; }
     const l4 = all.match(/(?:[*X]{4}[\s.-]*){1,3}(\d{4})\b|\*{2,}\s*(\d{4})\b|FINAL\s*:?\s*(\d{4})\b|CARTAO\s*:?\s*[*X\d\s]{6,}?(\d{4})\b/);
     if (l4) res.last4 = l4[1] || l4[2] || l4[3] || l4[4];
+    res.last4s = [...all.matchAll(/(?:[*X]{4}[\s.-]*){1,3}(\d{4})\b|\*{2,}\s*(\d{4})\b|FINAL\s*:?\s*(\d{4})\b/g)].map(m => m[1] || m[2] || m[3]);
 
     // Estabelecimento: primeira linha de cabeçalho com nome
     for (let i = 0; i < Math.min(lines.length, 8); i++) {

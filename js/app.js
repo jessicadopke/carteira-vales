@@ -19,6 +19,8 @@
   const MANY = 12; // a partir daqui os grupos por titular começam fechados
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+  // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
+  const APP_VERSION = "1.2.0";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -50,24 +52,80 @@
   }
   const delta = t => t.kind === "debit" ? -t.amount : t.amount;
 
+  // ---------- crédito do benefício: fixo ou variável ----------
+  // dayMode: "fixed" (todo dia X), "variable" (cai em dias diferentes) ou "none" (não controlar).
+  // amountMode: "fixed" (mesmo valor todo mês) ou "variable" (valor muda).
+  const dayModeOf = c => c.dayMode || (c.creditDay ? "fixed" : "none");
+  const amountModeOf = c => c.amountMode || "fixed";
+  const fromISO = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+  const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  const isBenefitCredit = t => t.kind === "credit" && (t.benefit || /^Crédito de /.test(t.desc || ""));
+  const benefitCredits = card => S.txs.filter(t => t.cardId === card.id && isBenefitCredit(t)).sort((a, b) => a.date.localeCompare(b.date));
+  // Datas em que o crédito caiu (inclui a data do último crédito informada no cadastro).
+  function creditDates(card) {
+    const ds = new Set(benefitCredits(card).map(t => t.date));
+    if (card.lastCreditDate) ds.add(card.lastCreditDate);
+    return [...ds].sort();
+  }
+  // Valor esperado do próximo crédito: o fixo, ou o último recebido.
+  function expectedAmount(card) {
+    if (amountModeOf(card) === "fixed") return card.monthlyCredit || 0;
+    const cs = benefitCredits(card);
+    return cs.length ? cs[cs.length - 1].amount : (card.monthlyCredit || 0);
+  }
+  // Previsão do próximo crédito pelo intervalo médio entre os últimos créditos (sem histórico: 30 dias).
+  function estimateNext(card) {
+    const ds = creditDates(card);
+    if (!ds.length) return null;
+    const recent = ds.slice(-6).map(fromISO);
+    const gaps = recent.slice(1).map((d, i) => Math.round((d - recent[i]) / 86400000)).filter(g => g >= 5);
+    const avg = gaps.length ? Math.round(gaps.reduce((s, g) => s + g, 0) / gaps.length) : 30;
+    const last = recent[recent.length - 1];
+    return { date: addDays(last, Math.min(45, Math.max(7, avg))), last, avg, samples: gaps.length };
+  }
+
   // ---------- períodos ----------
-  // Um período vai do dia do crédito até a véspera do crédito seguinte.
-  // Sem dia de crédito definido, o período é o mês do calendário.
+  // Dia fixo: um período vai do dia do crédito até a véspera do crédito seguinte.
+  // Dia variável: um período vai de um crédito real até o próximo crédito registrado.
+  // Sem dia de crédito, o período é o mês do calendário.
   function periodAt(card, date) {
-    const day = Number(card.creditDay) || 1;
     const d = midnight(date);
+    if (dayModeOf(card) === "variable") {
+      const ds = creditDates(card), iso = isoDay(d);
+      let i = -1;
+      ds.forEach((x, k) => { if (x <= iso) i = k; });
+      if (i >= 0) {
+        const start = fromISO(ds[i]);
+        let end, open = false;
+        if (ds[i + 1]) end = fromISO(ds[i + 1]);
+        else { open = true; const est = estimateNext(card); end = est && est.date > d ? est.date : addDays(d, 1); }
+        return { start, end, startISO: isoDay(start), endISO: open ? "9999-12-31" : isoDay(end), key: ds[i], open };
+      }
+      // antes do primeiro crédito conhecido: mês do calendário, até o primeiro crédito
+      const start = new Date(d.getFullYear(), d.getMonth(), 1);
+      let end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      if (ds[0] && fromISO(ds[0]) < end) end = fromISO(ds[0]);
+      return { start, end, startISO: isoDay(start), endISO: isoDay(end), key: "cal:" + monthKey(start), calendar: true };
+    }
+    const day = Number(card.creditDay) || 1;
     let start = mkDate(d.getFullYear(), d.getMonth(), day);
     if (d < start) start = mkDate(d.getFullYear(), d.getMonth() - 1, day);
     const end = mkDate(start.getFullYear(), start.getMonth() + 1, day);
-    return { start, end, startISO: isoDay(start), endISO: isoDay(end), key: monthKey(start) };
+    return { start, end, startISO: isoDay(start), endISO: isoDay(end), key: monthKey(start), calendar: dayModeOf(card) === "none" };
   }
   function periodShift(card, p, n) {
-    const day = Number(card.creditDay) || 1;
-    return periodAt(card, mkDate(p.start.getFullYear(), p.start.getMonth() + n, day));
+    if (dayModeOf(card) !== "variable") {
+      const day = Number(card.creditDay) || 1;
+      return periodAt(card, mkDate(p.start.getFullYear(), p.start.getMonth() + n, day));
+    }
+    let q = p;
+    for (let k = 0; k < Math.abs(n); k++) q = n < 0 ? periodAt(card, addDays(q.start, -1)) : periodAt(card, q.end);
+    return q;
   }
   function periodLabel(card, p) {
-    const last = new Date(p.end); last.setDate(last.getDate() - 1);
-    if (!card.creditDay) return `${MONTHS[p.start.getMonth()]} ${p.start.getFullYear()}`;
+    if (p.calendar && dayModeOf(card) !== "variable") return `${MONTHS[p.start.getMonth()]} ${p.start.getFullYear()}`;
+    if (p.open) return `${shortDate(p.start)} – hoje`;
+    const last = addDays(p.end, -1);
     return `${shortDate(p.start)} – ${shortDate(last)} ${last.getFullYear()}`;
   }
   function workdaysBetween(a, b) {
@@ -91,10 +149,29 @@
     };
   }
   function creditInfo(card) {
-    if (!card.creditDay) return null;
+    const mode = dayModeOf(card);
     const today = midnight(new Date());
-    const p = periodAt(card, today);
-    return { period: p, next: p.end, workdays: workdaysBetween(today, p.end), calDays: Math.round((p.end - today) / 86400000) };
+    if (mode === "fixed") {
+      const p = periodAt(card, today);
+      return { period: p, next: p.end, workdays: workdaysBetween(today, p.end), calDays: Math.round((p.end - today) / 86400000), estimated: false, overdue: false };
+    }
+    if (mode === "variable") {
+      const est = estimateNext(card);
+      if (!est) return null;
+      const overdue = est.date <= today;
+      return { period: periodAt(card, today), next: est.date, workdays: overdue ? 0 : workdaysBetween(today, est.date), calDays: Math.round((est.date - today) / 86400000), estimated: true, overdue, est };
+    }
+    return null;
+  }
+  // Quanto dá para gastar por dia útil até o próximo crédito (null quando o crédito está atrasado ou não há previsão).
+  function perDayOf(card, ci) {
+    if (!ci || ci.overdue) return null;
+    return Math.max(0, ci.workdays > 0 ? Math.floor((card.balance || 0) / ci.workdays) : card.balance || 0);
+  }
+  function creditWhen(ci) {
+    if (!ci) return "";
+    if (ci.overdue) return "crédito previsto: já deveria ter caído";
+    return `crédito em ${ci.estimated ? "~" : ""}${ci.calDays} ${ci.calDays === 1 ? "dia" : "dias"}`;
   }
 
   // ---------- criptografia do cofre ----------
@@ -215,7 +292,8 @@
     const card = cardById(tx.cardId);
     await Store.remove("txs", tx.id);
     if (card) await Store.patch("cards", card.id, { balance: (card.balance || 0) - delta(tx) });
-    if (tx.receiptId) await IDB.del("receipts", tx.receiptId);
+    // A foto pode ser compartilhada pelas partes de uma compra dividida: só apaga quando ninguém mais usa.
+    if (tx.receiptId && !S.txs.some(t => t.receiptId === tx.receiptId)) await IDB.del("receipts", tx.receiptId);
   }
   async function deleteCard(card) {
     for (const t of S.txs.filter(t => t.cardId === card.id)) {
@@ -272,19 +350,65 @@
     if (S.cards.length) decryptCards();
   }
 
+  // Cartões cujo crédito já deveria ter caído e ainda não foi registrado.
   function pendingCredits(cards) {
-    return cards.map(c => ({ c, ci: creditInfo(c) }))
-      .filter(({ c, ci }) => ci && (c.monthlyCredit || 0) > 0 && c.lastCreditMonth !== ci.period.key && !S.skipped.has(c.id));
+    return cards.map(c => ({ c, ci: creditInfo(c) })).filter(({ c, ci }) => {
+      if (!ci || S.skipped.has(c.id)) return false;
+      if (ci.estimated) return ci.overdue;
+      if (amountModeOf(c) === "fixed" && !(c.monthlyCredit > 0)) return false;
+      if (c.lastCreditMonth === ci.period.key) return false;
+      return !benefitCredits(c).some(t => t.date >= ci.period.startISO);
+    });
   }
   function renderNotices(list) {
-    return list.map(({ c, ci }) => `
+    return list.map(({ c, ci }) => {
+      const who = `<b>${esc(c.name)}</b>${c.holder ? ` (${esc(c.holder)})` : ""}`;
+      const amt = amountModeOf(c) === "fixed" ? `, <span class="num">${brl(c.monthlyCredit)}</span>,` : "";
+      const text = ci.estimated
+        ? `O crédito do ${who} estava previsto para <span class="num">${shortDate(ci.next)}</span>. Já caiu?`
+        : `O crédito de ${MONTHS[ci.period.start.getMonth()]} do ${who}${amt} já caiu?`;
+      return `
       <div class="notice">
-        <span>O crédito de ${MONTHS[ci.period.start.getMonth()]} do <b>${esc(c.name)}</b>${c.holder ? ` (${esc(c.holder)})` : ""}, <span class="num">${brl(c.monthlyCredit)}</span>, já caiu?</span>
+        <span>${text}</span>
         <span class="actions">
           <button class="btn small primary" data-act="credit-confirm" data-id="${c.id}">Registrar crédito</button>
           <button class="btn small ghost" data-act="credit-skip" data-id="${c.id}">Ainda não veio</button>
         </span>
-      </div>`).join("");
+      </div>`;
+    }).join("");
+  }
+  // Data padrão do lançamento do crédito: o dia fixo do período, ou hoje quando o dia varia.
+  const creditDateFor = (c, ci) => ci && !ci.estimated && ci.period.startISO <= todayISO() ? ci.period.startISO : todayISO();
+
+  // Registro de um crédito do benefício com valor e data editáveis.
+  function creditSheet(card) {
+    const ci = creditInfo(card);
+    const amt = expectedAmount(card);
+    const variable = amountModeOf(card) === "variable";
+    openSheet(`
+      <h3>Registrar crédito · ${esc(card.name)}</h3>
+      <form id="crForm" class="sform">
+        <label class="field"><span>Valor que caiu</span><input id="crAmount" class="money num" inputmode="decimal" placeholder="0,00" value="${amt > 0 ? fmtInput(amt) : ""}" autofocus></label>
+        ${variable ? `<span class="hint">O valor deste cartão varia. ${amt > 0 ? "Preenchi com o último crédito; confira no app do emissor." : "Confira o valor no app do emissor."}</span>` : ""}
+        <label class="field"><span>Data em que caiu</span><input id="crDate" type="date" value="${creditDateFor(card, ci)}"></label>
+        <div class="err" id="crErr"></div>
+        <div class="btnrow"><button class="btn primary" type="submit">Registrar crédito</button><button class="btn" type="button" data-close>Cancelar</button></div>
+      </form>`, () => {
+      $("crAmount").select();
+      $("crForm").addEventListener("submit", async e => {
+        e.preventDefault();
+        const v = parseMoney($("crAmount").value);
+        const date = $("crDate").value || todayISO();
+        if (!(v > 0)) { $("crErr").textContent = "Informe o valor do crédito, por exemplo 812,40."; return; }
+        const ok = await run(() => registerCredit(card, v, date), "Crédito registrado.");
+        if (ok) closeSheet();
+      });
+    });
+  }
+  async function registerCredit(card, amount, date) {
+    const d = fromISO(date);
+    await postTxs(card, [{ kind: "credit", amount, desc: `Crédito de ${MONTHS[d.getMonth()]}`, date, benefit: true }]);
+    if (dayModeOf(card) === "fixed") await Store.patch("cards", card.id, { lastCreditMonth: periodAt(card, d).key });
   }
 
   function renderHome() {
@@ -382,7 +506,8 @@
   function renderRow(c) {
     const st = issuerStyle(c);
     const ci = creditInfo(c);
-    const perDay = ci ? `${brl(Math.max(0, ci.workdays > 0 ? Math.floor((c.balance || 0) / ci.workdays) : c.balance || 0))}/dia útil` : (TYPES[c.type] || TYPES.outro).label;
+    const pd = perDayOf(c, ci);
+    const perDay = pd !== null ? `${brl(pd)}/dia útil` : ci && ci.overdue ? "aguardando crédito" : (TYPES[c.type] || TYPES.outro).label;
     return `
       <button class="cardrow" data-act="open-card" data-id="${c.id}">
         <span class="badge" style="background:${st.c}">${esc(st.s)}</span>
@@ -394,7 +519,7 @@
   // ---------- avisos de crédito: um a um ou em lote ----------
   function renderCreditNotices(list) {
     if (list.length <= 1) return renderNotices(list);
-    const total = list.reduce((s, { c }) => s + (c.monthlyCredit || 0), 0);
+    const total = list.reduce((s, { c }) => s + expectedAmount(c), 0);
     return `
       <div class="notice">
         <span><b>${list.length} cartões</b> têm crédito previsto neste período (<span class="num">${brl(total)}</span> no total). Já caíram?</span>
@@ -416,8 +541,8 @@
           ${list.map(({ c, ci }) => `
             <label class="chkrow">
               <input type="checkbox" data-id="${c.id}" checked>
-              <span class="rinfo"><span class="rname">${esc(c.name)}</span><span class="rsub">${esc(c.holder || "sem titular")} · ${MONTHS[ci.period.start.getMonth()]}, dia ${esc(c.creditDay)}</span></span>
-              <input class="num amt" inputmode="decimal" data-amt="${c.id}" value="${fmtInput(c.monthlyCredit)}" aria-label="Valor do crédito de ${esc(c.name)}">
+              <span class="rinfo"><span class="rname">${esc(c.name)}</span><span class="rsub">${esc(c.holder || "sem titular")} · ${ci.estimated ? `previsto ${shortDate(ci.next)}` : `${MONTHS[ci.period.start.getMonth()]}, dia ${esc(c.creditDay)}`}${amountModeOf(c) === "variable" ? " · valor varia" : ""}</span></span>
+              <input class="num amt" inputmode="decimal" data-amt="${c.id}" value="${expectedAmount(c) > 0 ? fmtInput(expectedAmount(c)) : ""}" placeholder="valor" aria-label="Valor do crédito de ${esc(c.name)}">
             </label>`).join("")}
         </div>
         <div class="err" id="cbErr"></div>
@@ -442,8 +567,7 @@
           for (const { id, v } of chosen) {
             const card = cardById(id); const ci = card && creditInfo(card);
             if (!ci) continue;
-            await postTxs(card, [{ kind: "credit", amount: v, desc: `Crédito de ${MONTHS[ci.period.start.getMonth()]}`, date: ci.period.startISO }]);
-            await Store.patch("cards", id, { lastCreditMonth: ci.period.key });
+            await registerCredit(card, v, creditDateFor(card, ci));
           }
         }, `${chosen.length} ${chosen.length === 1 ? "crédito registrado" : "créditos registrados"}.`);
         if (ok) closeSheet(); else $("cbGo").disabled = false;
@@ -475,7 +599,8 @@
     const draw = () => {
       const term = q.value.trim();
       const cs = sortedCards().filter(c => matchesQuery(c, term));
-      const sug = term ? [] : suggestions.filter(s => s.reasons.length).slice(0, 3);
+      const all = typeof suggestions === "function" ? suggestions() : suggestions;
+      const sug = term ? [] : all.filter(s => s.reasons.length).slice(0, 3);
       listEl.innerHTML =
         (sug.length ? `<div class="label pick-sec">Sugeridos</div>${sug.map(s => item(s.card, s.reasons.join(" · "))).join("")}<div class="label pick-sec">Todos os cartões</div>` : "") +
         (cs.length ? cs.map(c => item(c)).join("") : `<div class="empty">Nenhum cartão encontrado.</div>`);
@@ -498,10 +623,10 @@
   function renderTile(c, clickable) {
     const t = TYPES[c.type] || TYPES.outro;
     const ci = creditInfo(c);
-    let meta = `<span>Sem dia de crédito definido</span>`;
+    let meta = `<span>${dayModeOf(c) === "variable" ? "Registre um crédito para prever o próximo" : "Sem dia de crédito definido"}</span>`;
     if (ci) {
-      const perDay = ci.workdays > 0 ? Math.floor((c.balance || 0) / ci.workdays) : c.balance || 0;
-      meta = `<span>${brl(Math.max(0, perDay))}/dia útil</span><span>crédito em ${ci.calDays} ${ci.calDays === 1 ? "dia" : "dias"}</span>`;
+      const pd = perDayOf(c, ci);
+      meta = `<span>${pd !== null ? `${brl(pd)}/dia útil` : "aguardando crédito"}</span><span>${creditWhen(ci)}</span>`;
     }
     const attrs = clickable ? `data-act="open-card" data-id="${c.id}"` : `tabindex="-1" aria-disabled="true"`;
     return `
@@ -530,7 +655,8 @@
         ${g.items.map(t => {
           const c = cardById(t.cardId);
           const who = showCard && c ? [c.name, c.holder].filter(Boolean).join(" · ") : "";
-          const sub = [t.cat, t.source === "cupom" ? "via cupom" : "", who].filter(Boolean).join(" · ") || (t.kind === "credit" ? "Crédito" : "Gasto");
+          const part = t.groupId && t.purchaseTotal && t.purchaseTotal !== t.amount ? `parte de uma compra de ${brl(t.purchaseTotal)}` : "";
+          const sub = [t.cat, t.source === "cupom" ? "via cupom" : "", part, who].filter(Boolean).join(" · ") || (t.kind === "credit" ? "Crédito" : "Gasto");
           const ic = t.source === "ajuste" ? "±" : t.kind === "credit" ? "+" : (t.cat || t.desc || "?").slice(0, 2);
           return `
           <div class="tx">
@@ -578,19 +704,26 @@
     const bal = c.balance || 0;
     let quick = "";
     if (isCurrent && ci) {
-      const perDay = ci.workdays > 0 ? Math.floor(bal / ci.workdays) : bal;
+      const pd = perDayOf(c, ci);
       const elapsed = Math.round((midnight(new Date()) - p.start) / 86400000) + 1;
-      const pct = c.monthlyCredit > 0 ? Math.max(0, Math.min(100, Math.round(bal / c.monthlyCredit * 100))) : null;
+      const exp = expectedAmount(c);
+      const pct = exp > 0 ? Math.max(0, Math.min(100, Math.round(bal / exp * 100))) : null;
+      const amtLabel = amountModeOf(c) === "variable" ? (exp > 0 ? `valor varia · último ${brl(exp)}` : "valor varia") : (c.monthlyCredit ? brl(c.monthlyCredit) : "valor não informado");
+      const estLabel = ci.estimated ? (ci.est.samples ? `previsão pela média de ${ci.est.avg} dias entre créditos` : "previsão: 30 dias após o último crédito") : "";
       quick = `
         <div class="stats">
-          <div class="stat"><span class="h">Pode gastar por dia útil</span><span class="v num">${brl(Math.max(0, perDay))}</span><span class="h">${ci.workdays} dias úteis até o crédito</span></div>
-          <div class="stat"><span class="h">Próximo crédito</span><span class="v num">${shortDate(ci.next)}</span><span class="h num">${c.monthlyCredit ? brl(c.monthlyCredit) : "valor não informado"}</span></div>
+          <div class="stat"><span class="h">Pode gastar por dia útil</span><span class="v num">${pd !== null ? brl(pd) : "—"}</span><span class="h">${pd !== null ? `${ci.workdays} dias úteis até o crédito${ci.estimated ? " (previsto)" : ""}` : "o crédito previsto ainda não foi registrado"}</span></div>
+          <div class="stat"><span class="h">Próximo crédito${ci.estimated ? " (previsão)" : ""}</span><span class="v num">${ci.estimated ? "~" : ""}${shortDate(ci.next)}</span><span class="h num">${amtLabel}</span></div>
           <div class="stat"><span class="h">Gasto médio por dia</span><span class="v num">${brl(Math.round(st.debits / Math.max(1, elapsed)))}</span><span class="h">neste período</span></div>
         </div>
-        ${pct !== null ? `<div class="pace"><div class="cap"><span>Saldo restante do crédito mensal</span><span class="num">${pct}%</span></div><div class="bar"><span style="width:${pct}%"></span></div></div>` : ""}`;
+        ${estLabel ? `<p class="hint">${esc(estLabel)}. A previsão melhora a cada crédito registrado.</p>` : ""}
+        ${pct !== null ? `<div class="pace"><div class="cap"><span>Saldo restante em relação ao ${amountModeOf(c) === "variable" ? "último crédito" : "crédito mensal"}</span><span class="num">${pct}%</span></div><div class="bar"><span style="width:${pct}%"></span></div></div>` : ""}`;
     } else if (isCurrent) {
-      quick = `<p class="hint">Informe o dia do crédito em “Editar” para o app calcular quanto dá para gastar por dia útil e separar os períodos pelo ciclo do benefício.</p>`;
+      quick = dayModeOf(c) === "variable"
+        ? `<p class="hint">Este cartão recebe o crédito em dias variados. Registre o próximo crédito em “Adicionar crédito” para o app separar os períodos e prever os seguintes.</p>`
+        : `<p class="hint">Informe o dia do crédito em “Editar” (fixo ou variável) para o app calcular quanto dá para gastar por dia útil e separar os períodos pelo ciclo do benefício.</p>`;
     }
+    const hasEarlier = S.txs.some(t => t.cardId === c.id && t.date < p.startISO);
     return `
       <button class="back" data-act="home">← Todos os cartões</button>
       <section class="cards" style="grid-template-columns:1fr">${renderTile(c, false)}</section>
@@ -606,7 +739,7 @@
         <div class="panel-head">
           <h2>${isCurrent ? "Período atual" : "Período"}</h2>
           <div class="pernav">
-            <button class="iconbtn" data-act="per" data-d="-1" aria-label="Período anterior">‹</button>
+            <button class="iconbtn" data-act="per" data-d="-1" aria-label="Período anterior" ${hasEarlier ? "" : "disabled"}>‹</button>
             <span class="p num">${esc(periodLabel(c, p))}</span>
             <button class="iconbtn" data-act="per" data-d="1" aria-label="Próximo período" ${isCurrent ? "disabled" : ""}>›</button>
           </div>
@@ -687,9 +820,13 @@
         <button type="button" data-k="debit">Gasto</button><button type="button" data-k="credit">Crédito</button>
       </div>
       <form id="txForm" class="sform">
-        <label class="field"><span>Valor</span><input id="txAmount" class="money num" inputmode="decimal" placeholder="0,00" autocomplete="off" autofocus></label>
-        <div class="field"><span>Cartão</span>${cardPickerHTML("txCard", sel)}</div>
+        <div id="debitFields" class="field"><span>Pago com vale</span>${splitHTML("ts")}</div>
+        <div id="creditFields" class="sform">
+          <label class="field"><span>Valor</span><input id="txAmount" class="money num" inputmode="decimal" placeholder="0,00" autocomplete="off"></label>
+          <div class="field"><span>Cartão</span>${cardPickerHTML("txCard", sel)}</div>
+        </div>
         <div class="field" id="catField"><span>Categoria</span><div class="cats">${catButtons("")}</div></div>
+        <label class="check" id="benefitWrap"><input type="checkbox" id="txBenefit" checked> <span>É o crédito do benefício (começa um novo período). Desmarque para estorno ou devolução.</span></label>
         <label class="field"><span>Descrição (opcional)</span><input id="txDesc" maxlength="60" placeholder="Ex.: almoço no restaurante da esquina"></label>
         <label class="field"><span>Data</span><input id="txDate" type="date" value="${todayISO()}"></label>
         <div class="err" id="txErr"></div>
@@ -699,21 +836,45 @@
         sheet.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.k === state.kind)));
         $("txTitle").textContent = state.kind === "debit" ? "Lançar gasto" : "Adicionar crédito";
         $("catField").hidden = state.kind !== "debit";
+        $("benefitWrap").hidden = state.kind !== "credit";
+        $("debitFields").hidden = state.kind !== "debit";
+        $("creditFields").hidden = state.kind !== "credit";
       };
-      sheet.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => { state.kind = b.dataset.k; sync(); }));
+      sheet.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => {
+        state.kind = b.dataset.k; sync();
+        (state.kind === "debit" ? split.firstAmountInput() : $("txAmount")).focus();
+      }));
       wireCats(sheet, state);
       wirePicker("txCard");
+      const split = wireSplit("ts", { vale: [{ cardId: sel, amount: 0 }], other: [] });
       sync();
+      (state.kind === "debit" ? split.firstAmountInput() : $("txAmount")).focus();
       $("txForm").addEventListener("submit", async e => {
         e.preventDefault();
+        if (state.kind === "debit") {
+          const chk = checkSplit(split.get());
+          if (chk.err) { $("txErr").textContent = chk.err; return; }
+          const date = $("txDate").value || todayISO();
+          const warn = dupWarning(chk.parts, date);
+          if (warn && !state.dupOk) { state.dupOk = true; $("txErr").textContent = warn; return; }
+          let results = [];
+          const desc = $("txDesc").value.trim() || state.cat || "Compra";
+          const ok = await run(async () => { results = await savePurchase(chk.parts, chk.others, chk.total, { desc, cat: state.cat, date }); });
+          if (ok) { toast(results.length === 1 ? `Gasto salvo. Saldo do ${results[0].card.name}: ${brl(results[0].bal)}` : `Gasto salvo em ${results.length} vales.`); closeSheet(); }
+          return;
+        }
         const amount = parseMoney($("txAmount").value);
         const card = cardById($("txCard").value);
         if (!(amount > 0)) { $("txErr").textContent = "Informe um valor maior que zero, por exemplo 32,90."; return; }
         if (!card) { $("txErr").textContent = "Escolha um cartão."; return; }
         const date = $("txDate").value || todayISO();
-        const desc = $("txDesc").value.trim() || (state.kind === "debit" ? (state.cat || "Compra") : "Crédito");
+        const benefit = state.kind === "credit" && $("txBenefit").checked;
         let bal;
-        const ok = await run(async () => { bal = await postTxs(card, [{ kind: state.kind, amount, desc, cat: state.kind === "debit" ? state.cat : "", date }]); });
+        const ok = await run(async () => {
+          if (benefit) { await registerCredit(card, amount, date); bal = cardById(card.id).balance; return; }
+          const desc = $("txDesc").value.trim() || (state.kind === "debit" ? (state.cat || "Compra") : "Crédito avulso");
+          bal = await postTxs(card, [{ kind: state.kind, amount, desc, cat: state.kind === "debit" ? state.cat : "", date }]);
+        });
         if (ok) { toast(state.kind === "debit" ? `Gasto salvo. Saldo do ${card.name}: ${brl(bal)}` : "Crédito salvo."); closeSheet(); }
       });
     });
@@ -739,25 +900,48 @@
         </div>
         <span class="hint">O final do cartão ajuda a reconhecer de quem é cada cupom fiscal.</span>
         <div class="grid2">
-          <label class="field"><span>Crédito mensal</span><input id="cCredit" class="num" inputmode="decimal" placeholder="0,00" value="${c.monthlyCredit ? fmtInput(c.monthlyCredit) : ""}"></label>
-          <label class="field"><span>Dia do crédito</span><input id="cDay" type="number" min="1" max="31" inputmode="numeric" placeholder="ex.: 5" value="${esc(c.creditDay || "")}"></label>
+          <label class="field"><span>Valor do crédito</span><select id="cAmtMode"><option value="fixed" ${amountModeOf(c) === "fixed" ? "selected" : ""}>Fixo todo mês</option><option value="variable" ${amountModeOf(c) === "variable" ? "selected" : ""}>Varia</option></select></label>
+          <label class="field" id="cCreditWrap"><span>Valor mensal</span><input id="cCredit" class="num" inputmode="decimal" placeholder="0,00" value="${c.monthlyCredit ? fmtInput(c.monthlyCredit) : ""}"></label>
         </div>
-        <span class="hint">O dia do crédito define os períodos do cartão: cada período vai do dia do crédito até a véspera do próximo.</span>
+        <div class="grid2">
+          <label class="field"><span>Dia do crédito</span><select id="cDayMode"><option value="fixed" ${dayModeOf(c) === "fixed" ? "selected" : ""}>Dia fixo</option><option value="variable" ${dayModeOf(c) === "variable" ? "selected" : ""}>Varia</option><option value="none" ${dayModeOf(c) === "none" ? "selected" : ""}>Não controlar</option></select></label>
+          <label class="field" id="cDayWrap"><span>Dia do mês</span><input id="cDay" type="number" min="1" max="31" inputmode="numeric" placeholder="ex.: 5" value="${esc(c.creditDay || "")}"></label>
+          <label class="field" id="cLastWrap"><span>Último crédito caiu em</span><input id="cLast" type="date" value="${esc(c.lastCreditDate || "")}"></label>
+        </div>
+        <span class="hint" id="cHint"></span>
         <div class="err" id="cErr"></div>
         <div class="btnrow"><button class="btn primary" type="submit">${isNew ? "Adicionar cartão" : "Salvar alterações"}</button><button class="btn" type="button" data-close>Cancelar</button></div>
       </form>`, () => {
+      const syncModes = () => {
+        const am = $("cAmtMode").value, dm = $("cDayMode").value;
+        $("cCreditWrap").querySelector("span").textContent = am === "fixed" ? "Valor mensal" : "Valor aproximado (opcional)";
+        $("cDayWrap").hidden = dm !== "fixed";
+        $("cLastWrap").hidden = dm !== "variable";
+        $("cHint").textContent = dm === "fixed"
+          ? "Cada período vai do dia do crédito até a véspera do próximo."
+          : dm === "variable"
+            ? "Os períodos vão de um crédito registrado até o seguinte, e o app prevê o próximo pela média entre os créditos. Informe quando caiu o último para começar."
+            : "Sem controle de crédito: os períodos são os meses do calendário e não há aviso de crédito.";
+        if (am === "variable") $("cHint").textContent += " Como o valor varia, o app pergunta o valor a cada crédito.";
+      };
+      $("cAmtMode").addEventListener("change", syncModes);
+      $("cDayMode").addEventListener("change", syncModes);
+      syncModes();
       $("cardForm").addEventListener("submit", async e => {
         e.preventDefault();
         const name = $("cName").value.trim();
+        const amountMode = $("cAmtMode").value, dayMode = $("cDayMode").value;
         const credit = $("cCredit").value.trim() ? parseMoney($("cCredit").value) : 0;
         const dayRaw = $("cDay").value.trim();
-        const day = dayRaw ? Math.round(Number(dayRaw)) : "";
+        const day = dayMode === "fixed" && dayRaw ? Math.round(Number(dayRaw)) : "";
+        const lastCreditDate = dayMode === "variable" ? $("cLast").value : "";
         const last4 = $("cLast4").value.trim();
         if (!name) { $("cErr").textContent = "Dê um nome ao cartão."; return; }
         if (last4 && !/^\d{4}$/.test(last4)) { $("cErr").textContent = "O final do cartão deve ter 4 números."; return; }
-        if (isNaN(credit) || credit < 0) { $("cErr").textContent = "Crédito mensal inválido. Use o formato 800,00."; return; }
-        if (day !== "" && !(day >= 1 && day <= 31)) { $("cErr").textContent = "O dia do crédito deve ser entre 1 e 31."; return; }
-        const fields = { name, holder: $("cHolder").value.trim(), type: $("cType").value, issuer: $("cIssuer").value, last4, monthlyCredit: credit, creditDay: day };
+        if (isNaN(credit) || credit < 0) { $("cErr").textContent = "Valor do crédito inválido. Use o formato 800,00."; return; }
+        if (dayMode === "fixed" && !(day >= 1 && day <= 31)) { $("cErr").textContent = "Informe o dia do crédito, entre 1 e 31."; return; }
+        if (lastCreditDate && lastCreditDate > todayISO()) { $("cErr").textContent = "A data do último crédito não pode ser no futuro."; return; }
+        const fields = { name, holder: $("cHolder").value.trim(), type: $("cType").value, issuer: $("cIssuer").value, last4, monthlyCredit: credit, creditDay: day, dayMode, amountMode, lastCreditDate };
         if (isNew) {
           const bal = $("cBalance").value.trim() ? parseMoney($("cBalance").value) : 0;
           if (isNaN(bal) || bal < 0) { $("cErr").textContent = "Saldo inválido. Use o formato 450,75."; return; }
@@ -995,7 +1179,9 @@
 
   // Pontua cada cartão como provável pagador do cupom. Sinais, do mais forte ao mais fraco:
   // final do cartão, saldo impresso que fecha com o saldo daqui, loja onde o cartão já foi usado, emissor, tipo.
-  function rankCards(d, amount, saldoAfter, presetCardId) {
+  function rankCards(d, amount, saldos, presetCardId) {
+    const saldoList = (Array.isArray(saldos) ? saldos : [saldos]).filter(s => s !== null && s >= 0);
+    const finals = new Set([...(d && d.last4s) || [], ...(d && d.last4 ? [d.last4] : [])]);
     const key = storeKeyOf(d);
     const nameKey = d && d.store ? descKey(d.store) : null;
     const used = {};
@@ -1005,12 +1191,10 @@
     }
     return S.cards.map(c => {
       let score = 0; const reasons = [];
-      if (d && d.last4 && c.last4 === d.last4) { score += 100; reasons.push("final " + c.last4); }
-      if (saldoAfter !== null && saldoAfter >= 0) {
-        const bal = c.balance || 0;
-        if (amount > 0 && Math.abs(bal - amount - saldoAfter) <= 1) { score += 90; reasons.push("o saldo do cupom fecha com este cartão"); }
-        else if (Math.abs(bal - saldoAfter) <= 1) { score += 50; reasons.push("saldo igual ao do cupom"); }
-      }
+      if (c.last4 && finals.has(c.last4)) { score += 100; reasons.push("final " + c.last4); }
+      const bal = c.balance || 0;
+      if (amount > 0 && saldoList.some(s => Math.abs(bal - amount - s) <= 1)) { score += 90; reasons.push("o saldo do cupom fecha com este cartão"); }
+      else if (saldoList.some(s => Math.abs(bal - s) <= 1)) { score += 50; reasons.push("saldo igual ao do cupom"); }
       if (used[c.id]) { score += Math.min(45, 15 * used[c.id]); reasons.push(used[c.id] === 1 ? "já usado nesta loja" : `usado ${used[c.id]} vezes nesta loja`); }
       if (d && d.issuer && c.issuer === d.issuer) { score += 20; reasons.push(d.issuer); }
       if (d && d.category) {
@@ -1022,25 +1206,161 @@
     }).sort((a, b) => b.score - a.score || (a.card.createdAt || 0) - (b.card.createdAt || 0));
   }
 
+  // ---------- divisão do pagamento: vários vales + crédito, débito, Pix, dinheiro ----------
+  const OTHER_KINDS = { credito: "Cartão de crédito", debito: "Cartão de débito", pix: "Pix", dinheiro: "Dinheiro", outro: "Outra forma" };
+  let splitSeq = 0;
+  function splitHTML(p) {
+    return `
+      <div class="split" id="${p}Split">
+        <div class="split-rows" id="${p}Rows"></div>
+        <div class="btnrow"><button type="button" class="btn small" id="${p}AddVale">+ Outro vale</button><button type="button" class="btn small" id="${p}AddOther">+ Crédito, débito, Pix ou dinheiro</button></div>
+        <label class="field" id="${p}TotalWrap"><span>Total da compra</span><input id="${p}Total" class="num" inputmode="decimal" placeholder="soma das formas de pagamento"></label>
+        <div class="split-status num" id="${p}Status" role="status"></div>
+      </div>`;
+  }
+  // init: { vale: [{cardId, amount}], other: [{kind, amount}], total, suggest(amount) => ranking }
+  function wireSplit(p, init) {
+    const rowsEl = $(p + "Rows"), totalEl = $(p + "Total");
+    const listeners = [];
+    if (init.total > 0) totalEl.value = fmtInput(init.total);
+    const valeRows = () => [...rowsEl.querySelectorAll('.split-row[data-kind="vale"]')];
+    const otherRows = () => [...rowsEl.querySelectorAll('.split-row[data-kind="other"]')];
+    function addVale(cardId, amount, focus) {
+      const id = p + "C" + (++splitSeq);
+      const row = document.createElement("div");
+      row.className = "split-row"; row.dataset.kind = "vale"; row.dataset.pid = id;
+      row.innerHTML = `
+        <div class="split-main">${cardPickerHTML(id, cardId || "")}</div>
+        <div class="split-side"><input class="num amt money" inputmode="decimal" placeholder="0,00" value="${amount > 0 ? fmtInput(amount) : ""}" aria-label="Valor pago com este vale"><button type="button" class="mini x" data-rm aria-label="Remover esta forma de pagamento">×</button></div>
+        <div class="split-after hint num"></div>`;
+      rowsEl.appendChild(row);
+      wirePicker(id, () => init.suggest ? init.suggest(parseMoney(row.querySelector(".amt").value) || 0) : []);
+      if (focus) row.querySelector(".amt").focus();
+      update();
+    }
+    function addOther(kind, amount, focus) {
+      const row = document.createElement("div");
+      row.className = "split-row"; row.dataset.kind = "other";
+      row.innerHTML = `
+        <div class="split-main"><select class="okind" aria-label="Forma de pagamento">${Object.entries(OTHER_KINDS).map(([k, v]) => `<option value="${k}" ${k === kind ? "selected" : ""}>${v}</option>`).join("")}</select></div>
+        <div class="split-side"><input class="num amt" inputmode="decimal" placeholder="0,00" value="${amount > 0 ? fmtInput(amount) : ""}" aria-label="Valor pago desta forma"><button type="button" class="mini x" data-rm aria-label="Remover esta forma de pagamento">×</button></div>
+        <div class="split-after hint">Não mexe no saldo de nenhum vale.</div>`;
+      rowsEl.appendChild(row);
+      if (focus) row.querySelector(".amt").focus();
+      update();
+    }
+    const amt = row => { const v = row.querySelector(".amt").value.trim(); return v ? parseMoney(v) : 0; };
+    function get() {
+      const t = totalEl.value.trim();
+      return {
+        vale: valeRows().map(r => ({ cardId: $(r.dataset.pid).value, amount: amt(r) })),
+        other: otherRows().map(r => ({ kind: r.querySelector(".okind").value, amount: amt(r) })),
+        total: t ? parseMoney(t) : null,
+      };
+    }
+    function update() {
+      const vr = valeRows();
+      vr.forEach(r => {
+        r.querySelector("[data-rm]").hidden = vr.length === 1;
+        const c = cardById($(r.dataset.pid).value), a = amt(r), out = r.querySelector(".split-after");
+        if (!c) { out.textContent = "Escolha o cartão que pagou esta parte."; return; }
+        if (!(a > 0)) { out.textContent = `Saldo atual: ${brl(c.balance || 0)}`; return; }
+        const after = (c.balance || 0) - a;
+        out.textContent = `Saldo do ${c.name} depois desta compra: ${brl(after)}${after < 0 ? " (ficaria negativo, confira)" : ""}`;
+      });
+      const sp = get();
+      const vs = sp.vale.reduce((s, r) => s + (r.amount > 0 ? r.amount : 0), 0);
+      const os = sp.other.reduce((s, r) => s + (r.amount > 0 ? r.amount : 0), 0);
+      const st = $(p + "Status");
+      const multi = vr.length > 1 || otherRows().length > 0;
+      $(p + "TotalWrap").hidden = !multi && !(sp.total > 0);
+      if (!multi) { st.textContent = ""; return; }
+      let txt = `Vales: ${brl(vs)}${os ? ` · outras formas: ${brl(os)}` : ""}`;
+      if (sp.total > 0) {
+        const diff = sp.total - vs - os;
+        txt += diff === 0 ? " · confere com o total" : diff > 0 ? ` · faltam ${brl(diff)} para o total` : ` · ${brl(-diff)} a mais que o total`;
+        st.classList.toggle("bad", diff !== 0);
+      } else st.classList.remove("bad");
+      st.textContent = txt;
+    }
+    rowsEl.addEventListener("input", () => { update(); listeners.forEach(f => f()); });
+    rowsEl.addEventListener("change", () => { update(); listeners.forEach(f => f()); });
+    rowsEl.addEventListener("click", e => {
+      const rm = e.target.closest("[data-rm]"); if (!rm) return;
+      rm.closest(".split-row").remove(); update(); listeners.forEach(f => f());
+    });
+    totalEl.addEventListener("input", () => { update(); listeners.forEach(f => f()); });
+    $(p + "AddVale").addEventListener("click", () => addVale("", 0, true));
+    $(p + "AddOther").addEventListener("click", () => addOther("pix", 0, true));
+    (init.vale.length ? init.vale : [{ cardId: "", amount: 0 }]).forEach(v => addVale(v.cardId, v.amount));
+    (init.other || []).forEach(o => addOther(o.kind, o.amount));
+    return { get, onChange: f => listeners.push(f), firstAmountInput: () => valeRows()[0].querySelector(".amt") };
+  }
+  // Confere a divisão e devolve as partes pagas com vale, ou uma mensagem de erro.
+  function checkSplit(sp, allowEmpty) {
+    if (sp.vale.some(r => isNaN(r.amount) || r.amount < 0) || sp.other.some(r => isNaN(r.amount) || r.amount < 0)) return { err: "Há um valor inválido. Use o formato 32,90." };
+    if (sp.total !== null && (isNaN(sp.total) || sp.total < 0)) return { err: "Total da compra inválido. Use o formato 120,50." };
+    const parts = sp.vale.filter(r => r.amount > 0);
+    if (parts.some(r => !cardById(r.cardId))) return { err: "Escolha o cartão de cada vale usado." };
+    const ids = parts.map(r => r.cardId);
+    if (new Set(ids).size !== ids.length) return { err: "O mesmo cartão aparece duas vezes. Some os valores numa linha só." };
+    if (!parts.length && !allowEmpty) return { err: "Informe quanto foi pago com vale, por exemplo 32,90." };
+    const others = sp.other.filter(r => r.amount > 0);
+    const sum = parts.reduce((s, r) => s + r.amount, 0) + others.reduce((s, r) => s + r.amount, 0);
+    if (sp.total > 0 && sp.total !== sum) return { err: `As formas de pagamento somam ${brl(sum)}, mas o total é ${brl(sp.total)}. Ajuste os valores ou o total.` };
+    return { parts, others, total: sp.total > 0 ? sp.total : sum };
+  }
+  // Grava uma compra (dividida ou não): um gasto por vale, todos ligados pela mesma compra.
+  async function savePurchase(parts, others, total, base, extraFor) {
+    const split = parts.length > 1 || others.length > 0;
+    const purchase = split ? { groupId: uid(), purchaseTotal: total, otherPay: others.map(o => ({ kind: o.kind, amount: o.amount })) } : {};
+    const results = [];
+    for (const r of parts) {
+      const card = cardById(r.cardId);
+      const list = [{ kind: "debit", amount: r.amount, ...base, ...purchase }, ...(extraFor ? extraFor(card, r) : [])];
+      results.push({ card, bal: await postTxs(card, list) });
+    }
+    return results;
+  }
+  function dupWarning(parts, date) {
+    for (const r of parts) {
+      const dup = S.txs.find(t => t.cardId === r.cardId && t.kind === "debit" && t.amount === r.amount && t.date === date);
+      if (dup) return `Já existe um gasto de ${brl(r.amount)} no ${cardById(r.cardId).name} em ${fmtDay(date).toLowerCase()} (“${dup.desc}”). Toque em Salvar de novo se for outra compra.`;
+    }
+    return null;
+  }
+
   function reviewForm(sheet, blob, presetCardId, d, msg, rawText) {
     if (!sheet.querySelector("#scanBody")) return;
     d = d || {};
-    const amount = d.paid > 0 ? d.paid : null;
-    let saldo = typeof d.balance === "number" ? d.balance : null;
-    if (saldo !== null && d.balanceMoment === "antes_compra" && amount) saldo -= amount;
-    const ranked = rankCards(d, amount || 0, saldo, presetCardId);
-    const top = ranked[0];
-    const confident = top && top.score >= 50 && (!ranked[1] || top.score - ranked[1].score >= 20);
-    const cardId = top && top.score > 0 ? top.card.id : (presetCardId || defaultCardId());
-    const suggestLine = top && top.reasons.length
-      ? `<span>Cartão ${confident ? "identificado" : "provável"}: <b>${esc(top.card.name)}</b>${top.card.holder ? ` (${esc(top.card.holder)})` : ""} · ${esc(top.reasons.join(", "))}${confident ? "" : " (confira o cartão)"}</span>`
-      : (S.cards.length > 1 ? `<span>Não consegui identificar o cartão pelo cupom. Escolha abaixo.</span>` : "");
+    // Saldos impressos (um por comprovante de vale), já como "saldo depois da compra"
+    let saldos = d.balances && d.balances.length ? d.balances.slice() : typeof d.balance === "number" ? [d.balance] : [];
+    if (saldos.length === 1 && d.balanceMoment === "antes_compra" && d.paid > 0) saldos = [saldos[0] - d.paid];
+    // Partes pagas com vale e com outras formas, lidas da NFC-e
+    const pays = d.payments || [];
+    let valeAmts = pays.filter(p => p.kind === "vale").map(p => p.amount);
+    if (!valeAmts.length && d.paid > 0) valeAmts = [d.paid];
+    const others = pays.filter(p => p.kind !== "vale").map(p => ({ kind: p.kind, amount: p.amount }));
+    // Escolhe um cartão para cada parte, sem repetir, do mais provável para o menos provável
+    const taken = new Set();
+    const parts = (valeAmts.length ? valeAmts : [0]).map((a, i) => {
+      const r = rankCards(d, a, saldos, presetCardId).filter(x => !taken.has(x.card.id));
+      const pick = r[0] && r[0].score > 0 ? r[0] : null;
+      if (pick) taken.add(pick.card.id);
+      const confident = pick && pick.score >= 50 && (!r[1] || pick.score - r[1].score >= 20);
+      return { amount: a, pick, confident, cardId: pick ? pick.card.id : i === 0 ? (presetCardId || defaultCardId()) : "" };
+    });
+    const suggestLine = parts.map((pt, i) => pt.pick && pt.pick.reasons.length
+      ? `<span>${parts.length > 1 ? `Vale ${i + 1} (${brl(pt.amount)}): ` : "Cartão "}${pt.confident ? "identificado" : "provável"}: <b>${esc(pt.pick.card.name)}</b>${pt.pick.card.holder ? ` (${esc(pt.pick.card.holder)})` : ""} · ${esc(pt.pick.reasons.join(", "))}${pt.confident ? "" : " (confira o cartão)"}</span>`
+      : S.cards.length > 1 ? `<span>${parts.length > 1 ? `Vale ${i + 1}: n` : "N"}ão consegui identificar o cartão pelo cupom. Escolha abaixo.</span>` : "").join("");
     const date = d.date || todayISO();
     const state = { cat: d.category || "", dupOk: false };
+    const payLine = pays.length > 1 ? `<span>Pagamento: ${esc(pays.map(p => `${p.kind === "vale" ? "vale" : OTHER_KINDS[p.kind] || p.kind} ${brl(p.amount)}`).join(" + "))}</span>` : "";
     const summary = d.found && d.found.length ? `
       <div class="found">
         <span><b>Encontrado no cupom:</b> ${esc(d.found.join(", "))}${d.issuer ? ` · ${esc(d.issuer)}` : ""}${d.last4 ? ` final ${esc(d.last4)}` : ""}</span>
-        <span>${saldo !== null ? `Saldo do cartão impresso: <b class="num">${brl(saldo)}</b>${d.balanceMoment === "antes_compra" ? " (já descontada esta compra)" : ""}` : "O cupom não mostra o saldo do cartão."}</span>
+        ${payLine}
+        <span>${saldos.length ? `Saldo${saldos.length > 1 ? "s" : ""} do vale impresso${saldos.length > 1 ? "s" : ""}: <b class="num">${saldos.map(brl).join(" · ")}</b>${d.balanceMoment === "antes_compra" ? " (já descontada esta compra)" : ""}` : "O cupom não mostra o saldo do cartão: o saldo daqui será descontado pelo valor pago."}</span>
         ${suggestLine}
         <span class="hint">Confira os valores com o papel antes de salvar.</span>
       </div>` : (suggestLine ? `<div class="found">${suggestLine}</div>` : "");
@@ -1048,15 +1368,16 @@
       ${msg ? `<div class="notice">${esc(msg)}</div>` : ""}
       ${summary}
       <form id="rForm" class="sform">
-        <label class="field"><span>Valor pago com o cartão</span><input id="rAmount" class="money num" inputmode="decimal" placeholder="0,00" value="${amount ? fmtInput(amount) : ""}"></label>
-        <div class="field"><span>Cartão</span>${cardPickerHTML("rCard", cardId)}</div>
+        <div class="field"><span>Pago com vale</span>${splitHTML("rs")}</div>
         <div class="grid2">
           <label class="field"><span>Estabelecimento</span><input id="rDesc" maxlength="60" value="${esc(d.store || "")}"></label>
           <label class="field"><span>Data</span><input id="rDate" type="date" value="${date}"></label>
         </div>
         <div class="field"><span>Categoria</span><div class="cats">${catButtons(state.cat)}</div></div>
-        <label class="field"><span>Saldo do cartão impresso no cupom (se houver)</span><input id="rSaldo" class="num" inputmode="decimal" placeholder="não informado" value="${saldo !== null && saldo >= 0 ? fmtInput(saldo) : ""}"></label>
-        <label class="check" id="rUseWrap"><input type="checkbox" id="rUse"> <span id="rUseTxt"></span></label>
+        <div id="rSaldoBox">
+          <label class="field"><span>Saldo do vale impresso no cupom (se houver)</span><input id="rSaldo" class="num" inputmode="decimal" placeholder="não informado" value="${saldos.length === 1 && saldos[0] >= 0 ? fmtInput(saldos[0]) : ""}"></label>
+          <label class="check" id="rUseWrap"><input type="checkbox" id="rUse"> <span id="rUseTxt"></span></label>
+        </div>
         ${rawText ? `<details class="raw"><summary>Ver texto lido da foto</summary><pre></pre></details>` : ""}
         <div class="err" id="rErr"></div>
         <div class="btnrow">
@@ -1067,11 +1388,20 @@
     const pre = sheet.querySelector("details.raw pre");
     if (pre) pre.textContent = rawText;
     wireCats(sheet, state);
-    wirePicker("rCard", ranked);
+    const split = wireSplit("rs", {
+      vale: parts.map(pt => ({ cardId: pt.cardId, amount: pt.amount })),
+      other: others,
+      total: pays.length > 1 && d.total > 0 ? d.total : null,
+      suggest: a => rankCards(d, a, saldos, presetCardId),
+    });
+    // Conciliação pelo saldo impresso: só quando a compra usou um único vale.
+    const single = () => { const sp = split.get(); return sp.vale.length === 1 ? sp.vale[0] : null; };
     const syncUse = () => {
-      const card = cardById($("rCard").value);
+      const one = single();
+      $("rSaldoBox").hidden = !one;
+      const card = one && cardById(one.cardId);
       const s = parseMoney($("rSaldo").value);
-      const a = parseMoney($("rAmount").value);
+      const a = one ? one.amount : 0;
       const wrap = $("rUseWrap");
       wrap.hidden = !(s >= 0) || !card;
       if (wrap.hidden) return;
@@ -1085,42 +1415,46 @@
       $("rUse").disabled = diff === 0;
     };
     $("rUse").addEventListener("change", () => { $("rUse").dataset.touched = "1"; });
-    ["rCard", "rSaldo", "rAmount", "rDate"].forEach(id => $(id).addEventListener("input", () => { state.dupOk = false; syncUse(); }));
+    ["rSaldo", "rDate"].forEach(id => $(id).addEventListener("input", () => { state.dupOk = false; syncUse(); }));
+    split.onChange(() => { state.dupOk = false; syncUse(); });
     syncUse();
     const finish = () => { const q = scanQueue.splice(0); sheetCleanup = null; closeSheet(); if (q.length) { scanQueue.push(...q); setTimeout(nextScan, 50); } };
     $("rSkip").addEventListener("click", finish);
     $("rForm").addEventListener("submit", async e => {
       e.preventDefault();
-      const card = cardById($("rCard").value);
-      const a = $("rAmount").value.trim() ? parseMoney($("rAmount").value) : 0;
+      const sp = split.get();
+      const one = sp.vale.length === 1 ? sp.vale[0] : null;
       const s = $("rSaldo").value.trim() ? parseMoney($("rSaldo").value) : NaN;
       const dt = $("rDate").value || todayISO();
-      const useBal = !$("rUseWrap").hidden && $("rUse").checked && !$("rUse").disabled;
-      if (!card) { $("rErr").textContent = "Escolha o cartão que pagou."; return; }
-      if (isNaN(a) || a < 0) { $("rErr").textContent = "Valor inválido. Use o formato 32,90."; return; }
-      if (!(a > 0) && !useBal) { $("rErr").textContent = "Informe o valor pago ou marque o uso do saldo do cupom."; return; }
-      const dup = a > 0 && S.txs.find(t => t.cardId === card.id && t.kind === "debit" && t.amount === a && t.date === dt);
-      if (dup && !state.dupOk) {
-        state.dupOk = true;
-        $("rErr").textContent = `Já existe um gasto de ${brl(a)} neste cartão em ${fmtDay(dt).toLowerCase()} (“${dup.desc}”). Toque em Salvar de novo se for outra compra.`;
-        return;
-      }
+      const useBal = !!one && !$("rSaldoBox").hidden && !$("rUseWrap").hidden && $("rUse").checked && !$("rUse").disabled;
+      const chk = checkSplit(sp, useBal);
+      if (chk.err) { $("rErr").textContent = chk.err; return; }
+      if (useBal && !cardById(one.cardId)) { $("rErr").textContent = "Escolha o cartão que pagou."; return; }
+      const warn = dupWarning(chk.parts, dt);
+      if (warn && !state.dupOk) { state.dupOk = true; $("rErr").textContent = warn; return; }
       $("rSave").disabled = true;
-      let bal;
+      let results = [];
       const ok = await run(async () => {
         const receiptId = uid();
         await IDB.put("receipts", { id: receiptId, blob, createdAt: Date.now() });
-        const list = [];
+        const desc = $("rDesc").value.trim() || state.cat || "Compra";
         const storeKey = storeKeyOf({ cnpj: d.cnpj, store: $("rDesc").value.trim() || d.store });
-        if (a > 0) list.push({ kind: "debit", amount: a, desc: $("rDesc").value.trim() || state.cat || "Compra", cat: state.cat, date: dt, source: "cupom", receiptId, ...(storeKey ? { storeKey } : {}), ...(s >= 0 ? { reportedBalance: s } : {}) });
-        if (useBal) {
-          const diff = s - ((card.balance || 0) - (a > 0 ? a : 0));
-          if (diff !== 0) list.push({ kind: diff > 0 ? "credit" : "debit", amount: Math.abs(diff), desc: "Ajuste pelo saldo do cupom", source: "ajuste", date: dt, ...(a > 0 ? {} : { receiptId }) });
+        const base = { desc, cat: state.cat, date: dt, source: "cupom", receiptId, ...(storeKey ? { storeKey } : {}), ...(one && s >= 0 ? { reportedBalance: s } : {}) };
+        const adjust = (card, r) => {
+          if (!useBal) return [];
+          const diff = s - ((card.balance || 0) - r.amount);
+          return diff ? [{ kind: diff > 0 ? "credit" : "debit", amount: Math.abs(diff), desc: "Ajuste pelo saldo do cupom", source: "ajuste", date: dt }] : [];
+        };
+        if (chk.parts.length) results = await savePurchase(chk.parts, chk.others, chk.total, base, adjust);
+        else {
+          // Só o saldo, sem valor: o cupom é um extrato de saldo
+          const card = cardById(one.cardId);
+          const diff = s - (card.balance || 0);
+          results = [{ card, bal: diff ? await postTxs(card, [{ kind: diff > 0 ? "credit" : "debit", amount: Math.abs(diff), desc: "Ajuste pelo saldo do cupom", source: "ajuste", date: dt, receiptId }]) : card.balance }];
         }
-        bal = await postTxs(card, list);
       });
       if (!ok) { $("rSave").disabled = false; return; }
-      toast(`Cupom salvo. Saldo do ${card.name}: ${brl(bal)}`);
+      toast(results.length === 1 ? `Cupom salvo. Saldo do ${results[0].card.name}: ${brl(results[0].bal)}` : `Compra salva em ${results.length} vales.`);
       finish();
     });
   }
@@ -1150,6 +1484,7 @@
         ${hasCrypto && S.meta.vault ? `<button data-m="master"><span class="t">Trocar senha mestra do cofre</span><span class="s">Recriptografa todas as senhas guardadas.</span></button>` : ""}
         <button data-m="about"><span class="t">Sobre o armazenamento</span><span class="s">Onde ficam os dados e como não perder nada.</span></button>
       </div>
+      <p class="hint num">Carteira de Vales · versão ${APP_VERSION}</p>
       <div class="btnrow"><button class="btn" data-close>Fechar</button></div>`, sheet => {
       sheet.querySelectorAll("[data-m]").forEach(b => b.addEventListener("click", () => {
         const m = b.dataset.m;
@@ -1313,17 +1648,17 @@
         break;
       case "del-tx": {
         const tx = S.txs.find(t => t.id === id);
-        tx && confirmSheet("Apagar lançamento?", `“${esc(tx.desc)}” de <span class="num">${brl(tx.amount)}</span> sai do extrato e o saldo do cartão é recalculado.${tx.receiptId ? " A foto do cupom também é apagada." : ""}`, "Apagar",
+        const siblings = tx ? S.txs.filter(t => t.groupId && t.groupId === tx.groupId && t.id !== tx.id).length : 0;
+        tx && confirmSheet("Apagar lançamento?", `“${esc(tx.desc)}” de <span class="num">${brl(tx.amount)}</span> sai do extrato e o saldo do cartão é recalculado.${siblings ? ` Esta compra foi dividida: ${siblings === 1 ? "a outra parte continua" : `as outras ${siblings} partes continuam`} nos outros vales.` : tx.receiptId ? " A foto do cupom também é apagada." : ""}`, "Apagar",
           () => run(() => deleteTx(tx), "Lançamento apagado."));
         break;
       }
       case "credit-confirm": {
         const ci = card && creditInfo(card);
         if (!ci) break;
-        await run(async () => {
-          await postTxs(card, [{ kind: "credit", amount: card.monthlyCredit, desc: `Crédito de ${MONTHS[ci.period.start.getMonth()]}`, date: ci.period.startISO }]);
-          await Store.patch("cards", card.id, { lastCreditMonth: ci.period.key });
-        }, "Crédito registrado.");
+        // Valor e dia fixos: registra direto. Se algo varia, pergunta o valor e a data.
+        if (!ci.estimated && amountModeOf(card) === "fixed") await run(() => registerCredit(card, card.monthlyCredit, ci.period.startISO), "Crédito registrado.");
+        else creditSheet(card);
         break;
       }
       case "credit-skip": S.skipped.add(id); render(); break;
