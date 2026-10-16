@@ -1,10 +1,11 @@
 // Guarda o app no celular para abrir sem internet.
 // Ao publicar uma versão nova, mude VERSION para o celular baixar os arquivos atualizados.
-const VERSION = "carteira-vales-1.2.0";
+const VERSION = "carteira-vales-1.3.0";
 const FILES = [
   "./",
   "index.html",
   "styles.css",
+  "fonts/plus-jakarta-sans-latin.woff2",
   "manifest.webmanifest",
   "js/app.js",
   "js/receipt.js",
@@ -36,7 +37,7 @@ self.addEventListener("fetch", e => {
   const req = e.request;
   const url = new URL(req.url);
   if (req.method !== "GET" || url.origin !== location.origin) return;
-  if (/\/(vendor|icons)\//.test(url.pathname)) {
+  if (/\/(vendor|icons|fonts)\//.test(url.pathname)) {
     e.respondWith(caches.match(req, { ignoreSearch: true }).then(r => r || fetch(req)));
     return;
   }

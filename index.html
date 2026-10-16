@@ -3,34 +3,45 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0b6e4f" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0f1613" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b0f0e" media="(prefers-color-scheme: dark)">
 <meta name="description" content="Saldo dos cartões de vale-alimentação, refeição e multibenefício da família, com leitura de cupom fiscal e cofre de senhas.">
 <title>Carteira de Vales</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="preload" href="fonts/plus-jakarta-sans-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div class="wrap" id="app">
-  <div class="top">
-    <div class="brand"><div class="brand-mark">V</div><h1>Carteira de Vales</h1></div>
+<header class="appbar" id="appbar">
+  <div class="appbar-in">
+    <div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="16" height="16"><rect x="3" y="6" width="18" height="12" rx="3" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M3 10.5h18" stroke="currentColor" stroke-width="2.2"/></svg></div><span class="brand-name" id="brandName">Carteira de Vales</span></div>
     <div class="topright">
-      <button class="pill accent" id="installBtn" hidden>Instalar app</button>
-      <button class="pill" id="vaultBtn" hidden><span class="dot"></span><span id="vaultLbl">Cofre</span></button>
-      <button class="pill" id="menuBtn" aria-label="Mais opções">Mais</button>
+      <button class="pill accent" id="installBtn" hidden>Instalar</button>
+      <button class="pill lock" id="lockBtn" hidden aria-label="Trancar o cofre"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 11V8a4 4 0 0 1 8 0" fill="none" stroke="currentColor" stroke-width="2"/></svg>Trancar cofre</button>
+      <button class="iconbtn ghost" id="eyeBtn" aria-label="Esconder valores" aria-pressed="false">
+        <svg class="eye-on" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+        <svg class="eye-off" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10.9 10.9 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a10.6 10.6 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+      </button>
     </div>
   </div>
+</header>
+<main class="wrap" id="app">
   <div id="view"><div class="empty">Carregando…</div></div>
-</div>
-<div class="fabs" id="fabs" hidden>
-  <button class="fab alt" id="fabScan">Ler cupom</button>
-  <button class="fab" id="fabTx">+ Gasto</button>
-</div>
+</main>
+<nav class="tabbar" id="tabbar" hidden aria-label="Navegação principal">
+  <div class="tabbar-in">
+    <button class="tab" data-tab="home" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg><span>Início</span></button>
+    <button class="tab" data-tab="extrato"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 8h6M9 12h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span>Extrato</span></button>
+    <button class="tab-plus" id="plusBtn" aria-label="Novo lançamento"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+    <button class="tab" data-tab="cofre"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V7a4 4 0 0 1 8 0v3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span>Cofre</span></button>
+    <button class="tab" data-tab="ajustes"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><span>Ajustes</span></button>
+  </div>
+</nav>
 <input type="file" id="fileIn" accept="image/*" multiple hidden>
 <input type="file" id="importIn" accept="application/json,.json" hidden>
 <div id="sheetRoot"></div>
-<div id="toastRoot"></div>
+<div id="toastRoot" aria-live="polite"></div>
 <script src="vendor/tesseract/tesseract.min.js" defer></script>
 <script src="js/receipt.js" defer></script>
 <script src="js/app.js" defer></script>

@@ -6,7 +6,24 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 - **MINOR:** função nova, compatível com os dados e backups já existentes.
 - **PATCH:** só correção ou ajuste pequeno.
 
-A versão em uso aparece em **Mais**, no rodapé.
+A versão em uso aparece em **Ajustes**, no rodapé.
+
+## 1.3.0 — 16/10/2026
+
+### Novo
+- **Visual novo:** a fonte Plus Jakarta Sans vem embutida e funciona offline. As cores são neutras, com verde só como destaque, e os modos claro e escuro foram revisados.
+- **Cartão de saldo:** no topo da tela inicial, com o total, os gastos do mês e os créditos recebidos.
+- **Barra de abas embaixo:** Início, Extrato, Cofre e Ajustes, com um botão central **+** para lançar gasto, ler cupom, registrar crédito ou cadastrar cartão.
+- **Aba Extrato:** todos os lançamentos, com busca por loja, categoria, cartão, titular, valor ou data, e o total de gastos e créditos do resultado.
+- **Aba Cofre:** mostra o estado do cofre e quais cartões têm senhas guardadas.
+- **Aba Ajustes:** backup, restauração, fotos, aparência, troca da senha mestra e versão. Substitui o antigo botão "Mais".
+- **Esconder valores:** o botão de olho no topo desfoca todos os saldos e valores, para usar o app em público.
+- **Transições:** troca de tela animada, janelas que sobem e descem com efeito de mola, resposta ao toque nos botões e entrada suave das listas. Quem desativa as animações no Android não vê os efeitos.
+- **Cartões grandes:** degradê na cor do emissor, a mesma da sigla na lista.
+- **Tela do cartão:** atalhos para Gasto, Ler cupom, Crédito e Corrigir.
+
+### Corrigido
+- O botão "Cancelar" das janelas deixava uma entrada sobrando no histórico, e o "voltar" do Android precisava ser tocado duas vezes.
 
 ## 1.2.0 — 16/10/2026
 
