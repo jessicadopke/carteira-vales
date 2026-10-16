@@ -100,6 +100,45 @@ button:focus-visible, input:focus-visible, select:focus-visible, .cardtile:focus
 .cardtile.add { background: transparent; color: var(--muted); border: 1.5px dashed var(--line); box-shadow: none; align-items: center; justify-content: center; font-weight: 600; }
 .cardtile.add::after { display: none; }
 
+/* busca, lista compacta e grupos por titular */
+.toolbar { display: flex; gap: 8px; align-items: center; }
+.search { flex: 1; min-width: 0; font: inherit; font-size: 16px; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+#cardArea { display: flex; flex-direction: column; gap: 12px; }
+.cardlist { display: flex; flex-direction: column; background: var(--surface); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+.cardrow, .pick-item, .pick-btn { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; text-align: left; width: 100%; }
+.cardrow { border: 0; border-top: 1px solid var(--line); background: transparent; padding: 11px 14px; }
+.cardrow:first-child { border-top: 0; }
+.cardrow:active { background: var(--sunk); }
+.badge { width: 38px; height: 26px; border-radius: 6px; color: #fff; font-size: 12px; font-weight: 800; letter-spacing: .04em; display: grid; place-items: center; flex: none; }
+.badge.sm { width: 32px; height: 22px; font-size: 11px; }
+.rinfo { display: flex; flex-direction: column; min-width: 0; }
+.rname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rsub { font-size: 12.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rbal { font-family: var(--f-display); font-weight: 700; font-size: 16px; }
+.grp { display: flex; flex-direction: column; gap: 8px; }
+.grp-head { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; border: 0; background: transparent; padding: 6px 2px; text-align: left; }
+.grp-head .gname { font-family: var(--f-display); font-weight: 700; font-size: 16px; }
+.grp-head .gmeta { font-size: 13px; color: var(--muted); }
+.chev { color: var(--muted); font-size: 12px; }
+
+/* seletor de cartão */
+.picker { display: flex; flex-direction: column; gap: 8px; }
+.pick-btn { border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 9px 12px; }
+.pick-panel { border: 1px solid var(--line); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 6px; background: var(--surface); }
+.pick-list { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; }
+.pick-item { border: 0; background: transparent; border-radius: 8px; padding: 8px; grid-template-columns: auto 1fr; }
+.pick-item .why { grid-column: 2; font-size: 12px; color: var(--good); font-weight: 600; }
+.pick-item.sel { background: var(--info-bg); }
+.pick-sec { padding: 6px 8px 2px; }
+
+/* créditos em lote */
+.chklist { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; max-height: 50vh; overflow-y: auto; }
+.chkrow { display: grid; grid-template-columns: auto 1fr 96px; gap: 10px; align-items: center; padding: 9px 10px; border-top: 1px solid var(--line); }
+.chkrow:first-child { border-top: 0; }
+.chkrow input[type="checkbox"] { width: 20px; height: 20px; }
+.chkrow .amt { font: inherit; font-size: 15px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; width: 100%; text-align: right; }
+.menu button:disabled { opacity: .5; }
+
 /* avisos */
 .notice { background: var(--warn-bg); color: var(--warn-fg); border-radius: 12px; padding: 12px 14px; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; font-size: 14px; }
 .notice.info { background: var(--info-bg); color: var(--fg); }
