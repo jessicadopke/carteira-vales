@@ -20,7 +20,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.4.0";
+  const APP_VERSION = "1.5.0";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -193,11 +193,13 @@
   }
 
   // ---------- armazenamento no aparelho (IndexedDB) ----------
+  const DB_NAME = "ciclo";
+  const OLD_DB_NAME = "carteira-vales"; // nome usado até a 1.4.0
   const IDB = {
     db: null,
     open() {
       return new Promise((res, rej) => {
-        const r = indexedDB.open("carteira-vales", 1);
+        const r = indexedDB.open(DB_NAME, 1);
         r.onupgradeneeded = () => {
           const db = r.result;
           for (const s of ["cards", "txs", "receipts"]) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: "id" });
@@ -227,6 +229,26 @@
     del: (s, k) => IDB.req(s, "readwrite", st => st.delete(k)),
     clear: s => IDB.req(s, "readwrite", st => st.clear()),
   };
+  // Até a 1.4.0 o banco se chamava "carteira-vales". Se ele existir e o novo estiver vazio, copia tudo e apaga o antigo.
+  async function migrateOldDb() {
+    if (!indexedDB.databases) return false;
+    const list = await indexedDB.databases().catch(() => []);
+    if (!list.some(d => d.name === OLD_DB_NAME)) return false;
+    const [cards, meta] = await Promise.all([IDB.all("cards"), IDB.get("meta", "main")]);
+    if (cards.length || meta) return false;
+    const old = await new Promise((res, rej) => { const r = indexedDB.open(OLD_DB_NAME); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+    const read = (s, k) => new Promise(res => {
+      if (!old.objectStoreNames.contains(s)) return res(k ? undefined : []);
+      const q = k ? old.transaction(s).objectStore(s).get(k) : old.transaction(s).objectStore(s).getAll();
+      q.onsuccess = () => res(q.result); q.onerror = () => res(k ? undefined : []);
+    });
+    const data = { cards: await read("cards"), txs: await read("txs"), receipts: await read("receipts"), meta: await read("meta", "main") };
+    old.close();
+    for (const s of ["cards", "txs", "receipts"]) for (const v of data[s]) await IDB.put(s, v);
+    if (data.meta) await IDB.put("meta", data.meta, "main");
+    await new Promise(res => { const d = indexedDB.deleteDatabase(OLD_DB_NAME); d.onsuccess = d.onerror = d.onblocked = res; });
+    return data.cards.length > 0;
+  }
   const Store = {
     async put(k, obj) { await IDB.put(k, obj); upsert(k, obj); },
     async patch(k, id, part) {
@@ -555,12 +577,43 @@
       </div>
       <div class="section-head"><h2>Aparência</h2></div>
       <div class="menu">
+        <button data-act="m-theme"><span class="t">Tema</span><span class="s">Agora: ${THEMES[themeNow()].toLowerCase()}. ${THEME_HINT[themeNow()]}</span></button>
         <button data-act="layout"><span class="t">Mostrar cartões ${list ? "como cartões" : "em lista"}</span><span class="s">Agora: ${list ? "lista compacta" : "cartões grandes"}.</span></button>
         <button data-act="eye"><span class="t">${S.meta.hideValues ? "Mostrar valores" : "Esconder valores"}</span><span class="s">O mesmo que o botão de olho no topo.</span></button>
       </div>
       ${hasCrypto && S.meta.vault ? `<div class="section-head"><h2>Cofre</h2></div><div class="menu"><button data-act="m-master"><span class="t">Trocar senha mestra</span><span class="s">Recriptografa todas as senhas guardadas.</span></button></div>` : ""}
       ${S.installEvt ? `<div class="menu"><button data-act="install"><span class="t">Instalar o app</span><span class="s">Ícone na tela inicial, tela cheia e uso sem internet.</span></button></div>` : ""}
       <p class="foot num">Ciclo · do crédito ao próximo crédito · versão ${APP_VERSION}</p>`;
+  }
+
+  // ---------- tema: automático (segue o celular), claro ou escuro ----------
+  // Fica no localStorage para ser aplicado antes do primeiro desenho da tela (ver index.html).
+  const THEMES = { auto: "Automático", light: "Claro", dark: "Escuro" };
+  const THEME_HINT = { auto: "Segue o modo claro ou escuro do celular.", light: "Sempre claro, mesmo à noite.", dark: "Sempre escuro, cansa menos a vista." };
+  const themeNow = () => { try { return localStorage.getItem("ciclo-tema") || "auto"; } catch (e) { return "auto"; } };
+  function applyTheme(t) {
+    try { if (t === "auto") localStorage.removeItem("ciclo-tema"); else localStorage.setItem("ciclo-tema", t); } catch (e) {}
+    const root = document.documentElement;
+    if (t === "auto") delete root.dataset.theme; else root.dataset.theme = t;
+    document.querySelectorAll('meta[name="theme-color"]').forEach(m => {
+      const dark = t === "auto" ? /dark/.test(m.media) : t === "dark";
+      m.content = dark ? "#081417" : "#f3f7f7";
+    });
+  }
+  function themeSheet() {
+    const cur = themeNow();
+    openSheet(`
+      <h3>Tema</h3>
+      <div class="menu">
+        ${Object.keys(THEMES).map(k => `<button data-t="${k}" aria-pressed="${k === cur}"><span class="t">${THEMES[k]}${k === cur ? " · em uso" : ""}</span><span class="s">${THEME_HINT[k]}</span></button>`).join("")}
+      </div>`, sheet => {
+      sheet.querySelectorAll("[data-t]").forEach(b => b.addEventListener("click", () => {
+        const t = b.dataset.t;
+        const go = () => { applyTheme(t); render(); };
+        if (document.startViewTransition && !reduceMotion()) { document.documentElement.dataset.nav = "fade"; document.startViewTransition(go); } else go();
+        closeSheet();
+      }));
+    });
   }
 
   // ---------- botão + ----------
@@ -1164,7 +1217,7 @@
           $("vBtn").disabled = true;
           const salt = b64(crypto.getRandomValues(new Uint8Array(16)));
           const key = await deriveKey(a, salt);
-          const check = await seal(key, { ok: "carteira-vales" });
+          const check = await seal(key, { ok: "ciclo" });
           const ok = await run(() => Store.setMeta({ ...S.meta, vault: { salt, ...check } }), "Cofre criado e aberto.");
           if (ok) { S.key = key; touchVault(); closeSheet(); render(); then && then(); }
           else $("vBtn").disabled = false;
@@ -1259,7 +1312,7 @@
             const plain = await unseal(oldKey, c.secret);
             await Store.patch("cards", c.id, { secret: await seal(newKey, plain) });
           }
-          await Store.setMeta({ ...S.meta, vault: { salt, ...(await seal(newKey, { ok: "carteira-vales" })) } });
+          await Store.setMeta({ ...S.meta, vault: { salt, ...(await seal(newKey, { ok: "ciclo" })) } });
         }, "Senha mestra trocada.");
         if (ok) { S.key = newKey; S.plainSig = {}; touchVault(); closeSheet(); render(); }
         else $("mBtn").disabled = false;
@@ -1682,7 +1735,7 @@
       $("bkGo").addEventListener("click", async () => {
         $("bkGo").disabled = true; $("bkGo").textContent = "Gerando…";
         try {
-          const data = { app: "carteira-vales", version: BACKUP_VERSION, exportedAt: new Date().toISOString(), cards: S.cards, txs: S.txs, meta: { vault: S.meta.vault || null }, receipts: [] };
+          const data = { app: "ciclo", version: BACKUP_VERSION, exportedAt: new Date().toISOString(), cards: S.cards, txs: S.txs, meta: { vault: S.meta.vault || null }, receipts: [] };
           if ($("bkPhotos").checked) {
             for (const r of await IDB.all("receipts")) data.receipts.push({ id: r.id, createdAt: r.createdAt, data: await blobToDataURL(r.blob) });
           }
@@ -1714,7 +1767,7 @@
   async function importFile(file) {
     let data;
     try { data = JSON.parse(await file.text()); } catch (e) { toast("Este arquivo não é um backup válido."); return; }
-    if (!data || data.app !== "carteira-vales" || !Array.isArray(data.cards) || !Array.isArray(data.txs)) { toast("Este arquivo não é um backup do Ciclo."); return; }
+    if (!data || !["ciclo", "carteira-vales"].includes(data.app) || !Array.isArray(data.cards) || !Array.isArray(data.txs)) { toast("Este arquivo não é um backup do Ciclo."); return; }
     const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString("pt-BR") : "data desconhecida";
     confirmSheet("Restaurar backup?", `O backup de <b>${esc(when)}</b> tem ${data.cards.length} cartões e ${data.txs.length} lançamentos. Os dados atuais deste celular serão <b>substituídos</b>.`, "Restaurar", async () => {
       const ok = await run(async () => {
@@ -1819,6 +1872,7 @@
       case "m-photos": photosSheet(); break;
       case "m-about": aboutSheet(); break;
       case "m-master": changeMasterSheet(); break;
+      case "m-theme": themeSheet(); break;
     }
   });
   // As buscas redesenham só a própria lista, para o teclado não fechar a cada letra.
@@ -1845,7 +1899,10 @@
   // ---------- inicialização ----------
   (async () => {
     try {
+      applyTheme(themeNow());
       await IDB.open();
+      const migrated = await migrateOldDb().catch(e => { console.warn("migração", e); return false; });
+      if (migrated) setTimeout(() => toast("Seus dados foram trazidos da versão anterior."), 600);
       const [cards, txs, meta] = await Promise.all([IDB.all("cards"), IDB.all("txs"), IDB.get("meta", "main")]);
       S.cards = cards; S.txs = txs; S.meta = meta || {}; S.loaded = true;
       history.replaceState({ home: true }, "");
