@@ -131,6 +131,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, .cardtile:focus
 .pick-item.sel { background: var(--info-bg); }
 .pick-sec { padding: 6px 8px 2px; }
 
+/* divisão do pagamento */
+.split { display: flex; flex-direction: column; gap: 10px; }
+.split-rows { display: flex; flex-direction: column; gap: 10px; }
+.split-row { display: grid; grid-template-columns: 1fr 132px; gap: 8px; align-items: start; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.split-row[data-kind="other"] { background: var(--sunk); }
+.split-main { min-width: 0; }
+.split-side { display: flex; gap: 4px; align-items: center; }
+.split-side .amt { font: inherit; font-size: 16px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; width: 100%; min-width: 0; text-align: right; }
+.split-side .amt.money { font-family: var(--f-display); font-size: 20px; font-weight: 700; padding: 6px 10px; }
+.split-side .mini { border: 0; background: transparent; color: var(--muted); font-size: 20px; padding: 4px 6px; }
+.split-row .okind { font: inherit; font-size: 16px; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; width: 100%; }
+.split-after { grid-column: 1 / -1; }
+.split-status { font-size: 13.5px; font-weight: 600; color: var(--good); }
+.split-status.bad { color: var(--bad); }
+@media (max-width: 420px) { .split-row { grid-template-columns: 1fr; } }
+
 /* créditos em lote */
 .chklist { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 12px; max-height: 50vh; overflow-y: auto; }
 .chkrow { display: grid; grid-template-columns: auto 1fr 96px; gap: 10px; align-items: center; padding: 9px 10px; border-top: 1px solid var(--line); }

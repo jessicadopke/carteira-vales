@@ -1,6 +1,6 @@
 // Guarda o app no celular para abrir sem internet.
 // Ao publicar uma versão nova, mude VERSION para o celular baixar os arquivos atualizados.
-const VERSION = "carteira-vales-v1";
+const VERSION = "carteira-vales-1.2.0";
 const FILES = [
   "./",
   "index.html",
