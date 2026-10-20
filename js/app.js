@@ -20,7 +20,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.7.0";
+  const APP_VERSION = "1.8.0";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -730,6 +730,29 @@
     return `<div class="notice info"><span>A versão <b class="num">${esc(S.updateAvailable)}</b> do Ciclo está disponível (você está na ${APP_VERSION}).</span><span class="actions"><button class="btn small primary" data-act="update-now">Atualizar</button></span></div>`;
   }
 
+  // ---------- leitura de cartão por foto ----------
+  // Gemini (se ligado) e, se falhar, o leitor do celular. A imagem não é guardada em lugar nenhum.
+  async function readCardImage(file, onStatus) {
+    let fallbackMsg = null;
+    if (geminiOn()) {
+      try {
+        onStatus && onStatus("Lendo com o Gemini…");
+        const img = await shrink(file, 2000, 0.85, false);
+        return await GeminiReader.readCard(img, { key: S.meta.gemini.key, model: S.meta.gemini.model });
+      } catch (e) {
+        console.warn("gemini cartão", e);
+        fallbackMsg = "Gemini: " + GeminiReader.explain(e) + " Lido no celular.";
+      }
+    }
+    try {
+      onStatus && onStatus("Lendo no celular…");
+      const text = await ReceiptReader.readText(file);
+      const r = ReceiptReader.parseCard(text);
+      r.fallbackMsg = fallbackMsg;
+      return r;
+    } catch (e) { console.warn("cartão", e); return null; }
+  }
+
   // ---------- câmera ou galeria ----------
   // "Ler cupom" abre a câmera traseira direto (capture="environment"); a galeria fica como opção secundária.
   function openCamera(cardId) { S.scanCard = cardId || null; $("camIn").click(); }
@@ -1211,6 +1234,16 @@
     const c = card || { name: "", holder: S.person || "", type: "refeicao", issuer: "VR", last4: "", monthlyCredit: 0, creditDay: "" };
     openSheet(`
       <h3>${isNew ? "Novo cartão" : "Editar cartão"}</h3>
+      <div class="photofill">
+        <span class="hint">Preencher por foto:</span>
+        <div class="btnrow">
+          <button class="btn small" type="button" id="cpCamBtn">${ICON.cupom}Foto do cartão</button>
+          <button class="btn small" type="button" id="cpGalBtn">${ICON.cartao}Print do app do emissor</button>
+        </div>
+        <input type="file" id="cpCam" accept="image/*" capture="environment" hidden>
+        <input type="file" id="cpGal" accept="image/*" hidden>
+        <div id="cpStatus" class="hint" role="status"></div>
+      </div>
       <form id="cardForm" class="sform">
         <div class="grid2">
           <label class="field"><span>Nome do cartão</span><input id="cName" maxlength="40" value="${esc(c.name)}" placeholder="Ex.: VR Refeição" autofocus></label>
@@ -1238,6 +1271,35 @@
         <div class="err" id="cErr"></div>
         <div class="btnrow"><button class="btn primary" type="submit">${isNew ? "Adicionar cartão" : "Salvar alterações"}</button><button class="btn" type="button" data-close>Cancelar</button></div>
       </form>`, () => {
+      // ---- preencher por foto (cartão ou print do app) ----
+      const onPhoto = async e => {
+        const f = e.target.files && e.target.files[0]; e.target.value = "";
+        if (!f) return;
+        const st = $("cpStatus");
+        st.innerHTML = `<span class="loading"><span class="spin"></span>Lendo a imagem…</span>`;
+        const r = await readCardImage(f, msg => { if ($("cpStatus")) $("cpStatus").textContent = msg; });
+        if (!$("cardForm")) return;
+        if (!r) { st.textContent = "Não consegui ler a imagem. Preencha os campos à mão."; return; }
+        const filled = [];
+        const setV = (id, v, label) => { if (v && $(id)) { $(id).value = v; filled.push(label); } };
+        if (r.issuer && ISSUERS.includes(r.issuer)) setV("cIssuer", r.issuer, "emissor");
+        if (r.type && TYPES[r.type]) setV("cType", r.type, "tipo");
+        setV("cLast4", r.last4, "final");
+        setV("cHolder", r.holder, "titular");
+        if (r.balance !== null && r.balance !== undefined && $("cBalance")) setV("cBalance", fmtInput(r.balance), "saldo");
+        if (!$("cName").value.trim() && (r.issuer || r.type)) {
+          $("cName").value = [r.issuer && r.issuer !== "Outro" ? r.issuer.replace(" (Sodexo)", "") : "", r.type ? TYPES[r.type].label : ""].filter(Boolean).join(" ");
+          filled.push("nome");
+        }
+        st.textContent = filled.length
+          ? `${r.source === "gemini" ? "Lido pelo Gemini" : "Lido no celular"}: ${filled.join(", ")}. Confira antes de salvar.${r.fallbackMsg ? " (" + r.fallbackMsg + ")" : ""}`
+          : "Não encontrei os dados do cartão nessa imagem. Tente uma foto mais nítida da frente do cartão ou preencha à mão.";
+      };
+      $("cpCam").addEventListener("change", onPhoto);
+      $("cpGal").addEventListener("change", onPhoto);
+      $("cpCamBtn").addEventListener("click", () => $("cpCam").click());
+      $("cpGalBtn").addEventListener("click", () => $("cpGal").click());
+
       const syncModes = () => {
         const am = $("cAmtMode").value, dm = $("cDayMode").value;
         $("cCreditWrap").querySelector("span").textContent = am === "fixed" ? "Valor mensal" : "Valor aproximado (opcional)";
@@ -1707,6 +1769,25 @@
       const confident = pick && pick.score >= 50 && (!r[1] || pick.score - r[1].score >= 20);
       return { amount: a, pick, confident, cardId: pick ? pick.card.id : i === 0 ? (presetCardId || defaultCardId()) : "" };
     });
+    // Cartões do cupom que não estão na carteira: final ou emissor que nenhum cartão cadastrado tem,
+    // sem um sinal forte (final ou saldo que fecha) apontando para um cartão existente.
+    const unknown = parts.map((pt, i) => {
+      const v = perVale ? perVale[i] : i === 0 ? { issuer: d.issuer || null, last4: d.last4 || null, saldo: saldos.length === 1 ? saldos[0] : null } : null;
+      if (!v || (!v.issuer && !v.last4)) return null;
+      if (pt.pick && pt.pick.reasons.some(r => /^final |saldo/.test(r))) return null;
+      const lastUnknown = !!v.last4 && !S.cards.some(c => c.last4 === v.last4);
+      const issuerUnknown = !!v.issuer && !S.cards.some(c => c.issuer === v.issuer);
+      if (!lastUnknown && !issuerUnknown) return null;
+      pt.cardId = ""; // não chuta um cartão errado: escolha ou cadastre
+      pt.pick = null;
+      return { i, issuer: v.issuer, last4: v.last4, saldo: v.saldo === undefined ? null : v.saldo, amount: pt.amount };
+    }).filter(Boolean);
+    const unknownHTML = unknown.map(u => `
+      <div class="notice" id="unk${u.i}">
+        <span>O cartão <b>${esc([u.issuer, u.last4 ? "final " + u.last4 : ""].filter(Boolean).join(" ") || "deste cupom")}</b>${u.amount ? ` (<span class="num">${brl(u.amount)}</span>)` : ""} não está cadastrado na sua carteira.</span>
+        <span class="actions"><button type="button" class="btn small primary" data-newcard="${u.i}">Cadastrar agora</button></span>
+      </div>
+      <div id="ncBox${u.i}"></div>`).join("");
     const suggestLine = parts.map((pt, i) => pt.pick && pt.pick.reasons.length
       ? `<span>${parts.length > 1 ? `Vale ${i + 1} (${brl(pt.amount)}): ` : "Cartão "}${pt.confident ? "identificado" : "provável"}: <b>${esc(pt.pick.card.name)}</b>${pt.pick.card.holder ? ` (${esc(pt.pick.card.holder)})` : ""} · ${esc(pt.pick.reasons.join(", "))}${pt.confident ? "" : " (confira o cartão)"}</span>`
       : S.cards.length > 1 ? `<span>${parts.length > 1 ? `Vale ${i + 1}: n` : "N"}ão consegui identificar o cartão pelo cupom. Escolha abaixo.</span>` : "").join("");
@@ -1724,6 +1805,7 @@
     sheet.querySelector("#scanBody").outerHTML = `
       ${msg ? `<div class="notice">${esc(msg)}</div>` : ""}
       ${summary}
+      ${unknownHTML}
       <form id="rForm" class="sform">
         <div class="field"><span>Pago com vale</span>${splitHTML("rs")}</div>
         <div class="grid2">
@@ -1751,6 +1833,78 @@
       total: pays.length > 1 && d.total > 0 ? d.total : null,
       suggest: a => rankCards(d, a, saldos, presetCardId),
     });
+
+    // ---- cadastrar na hora o cartão que não está na carteira ----
+    const typeFromCat = { Mercado: "alimentacao", Feira: "alimentacao", Restaurante: "refeicao", Lanche: "refeicao", Padaria: "refeicao", Delivery: "refeicao" };
+    sheet.addEventListener("click", async e => {
+      const open = e.target.closest("[data-newcard]");
+      const save = e.target.closest("[data-ncsave]");
+      const cancel = e.target.closest("[data-nccancel]");
+      if (open) {
+        const u = unknown.find(x => x.i === +open.dataset.newcard);
+        const type = typeFromCat[state.cat] || "alimentacao";
+        const issuer = u.issuer && ISSUERS.includes(u.issuer) ? u.issuer : "Outro";
+        const k = u.i;
+        $("ncBox" + k).innerHTML = `
+          <div class="newcard">
+            <h4>Novo cartão</h4>
+            <div class="grid2">
+              <label class="field"><span>Nome do cartão</span><input id="ncName${k}" maxlength="40" value="${esc([issuer !== "Outro" ? issuer.replace(" (Sodexo)", "") : "", TYPES[type].label].filter(Boolean).join(" "))}"></label>
+              <label class="field"><span>Titular</span><input id="ncHolder${k}" maxlength="40" list="ncHolders${k}" value="${esc(S.person || "")}" placeholder="Ex.: Ana"><datalist id="ncHolders${k}">${holders().filter(Boolean).map(h => `<option value="${esc(h)}">`).join("")}</datalist></label>
+            </div>
+            <div class="grid2">
+              <label class="field"><span>Tipo</span><select id="ncType${k}">${Object.entries(TYPES).map(([t, v]) => `<option value="${t}" ${t === type ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>
+              <label class="field"><span>Emissor</span><select id="ncIssuer${k}">${ISSUERS.map(x => `<option ${x === issuer ? "selected" : ""}>${esc(x)}</option>`).join("")}</select></label>
+            </div>
+            <div class="grid2">
+              <label class="field"><span>Final do cartão</span><input id="ncLast${k}" inputmode="numeric" maxlength="4" value="${esc(u.last4 || "")}" placeholder="4 últimos dígitos"></label>
+              <label class="field"><span>${u.saldo !== null ? "Saldo depois desta compra" : "Saldo antes desta compra"}</span><input id="ncBal${k}" class="num" inputmode="decimal" placeholder="0,00" value="${u.saldo !== null && u.saldo >= 0 ? fmtInput(u.saldo) : ""}"></label>
+            </div>
+            <span class="hint">${u.saldo !== null ? "Veio do saldo impresso no cupom. " : ""}O dia e o valor do crédito você completa depois, em Editar cartão.</span>
+            <div class="err" id="ncErr${k}"></div>
+            <div class="btnrow"><button type="button" class="btn primary" data-ncsave="${k}">Adicionar cartão</button><button type="button" class="btn" data-nccancel="${k}">Cancelar</button></div>
+          </div>`;
+        open.hidden = true;
+        $("ncName" + k).focus();
+      } else if (cancel) {
+        const k = +cancel.dataset.nccancel;
+        $("ncBox" + k).innerHTML = "";
+        const b = sheet.querySelector(`[data-newcard="${k}"]`); if (b) b.hidden = false;
+      } else if (save) {
+        const k = +save.dataset.ncsave;
+        const u = unknown.find(x => x.i === k);
+        const name = $("ncName" + k).value.trim(), last4 = $("ncLast" + k).value.trim();
+        const balRaw = $("ncBal" + k).value.trim(), bal = balRaw ? parseMoney(balRaw) : 0;
+        if (!name) { $("ncErr" + k).textContent = "Dê um nome ao cartão."; return; }
+        if (last4 && !/^\d{4}$/.test(last4)) { $("ncErr" + k).textContent = "O final do cartão deve ter 4 números."; return; }
+        if (isNaN(bal) || bal < 0) { $("ncErr" + k).textContent = "Saldo inválido. Use o formato 450,75."; return; }
+        // valor que este vale pagou (pode ter sido corrigido na tela)
+        const valeRows = [...sheet.querySelectorAll('#rsRows .split-row[data-kind="vale"]')];
+        const row = valeRows[k];
+        const rowAmt = row ? (parseMoney(row.querySelector(".amt").value) || 0) : u.amount || 0;
+        // o saldo inicial fica de modo que, depois desta compra, o saldo seja o informado
+        const initial = u.saldo !== null ? bal + rowAmt : bal;
+        const newCard = { id: uid(), name, holder: $("ncHolder" + k).value.trim(), type: $("ncType" + k).value, issuer: $("ncIssuer" + k).value, last4, monthlyCredit: 0, creditDay: "", dayMode: "none", amountMode: "fixed", balance: 0, createdAt: Date.now(), secret: null };
+        save.disabled = true;
+        const ok = await run(async () => {
+          await Store.put("cards", newCard);
+          if (initial > 0) await postTxs(newCard, [{ kind: "credit", amount: initial, desc: "Saldo inicial", source: "ajuste", date: $("rDate").value || todayISO() }]);
+        });
+        if (!ok) { save.disabled = false; return; }
+        askPersist();
+        // escolhe o cartão novo para este vale
+        if (row) {
+          const hidden = $(row.dataset.pid);
+          hidden.value = newCard.id;
+          $(row.dataset.pid + "Btn").innerHTML = pickLabel(cardById(newCard.id));
+          hidden.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        $("ncBox" + k).innerHTML = "";
+        $("unk" + k).className = "notice info";
+        $("unk" + k).innerHTML = `<span>Cartão <b>${esc(name)}</b> cadastrado e escolhido para este vale. Agora é só salvar o cupom.</span>`;
+      }
+    });
+
     // Conciliação pelo saldo impresso: só quando a compra usou um único vale.
     const single = () => { const sp = split.get(); return sp.vale.length === 1 ? sp.vale[0] : null; };
     const syncUse = () => {

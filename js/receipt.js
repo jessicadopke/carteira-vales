@@ -239,5 +239,43 @@
     return res;
   }
 
-  window.ReceiptReader = { readText, parse, prepare };
+  // ---------- cadastro de cartão por foto (leitor do celular) ----------
+  // Foto do cartão ou print do app do emissor. Guarda só os 4 últimos dígitos do número.
+  const CARD_WORDS = /ALELO|PLUXEE|SODEXO|TICKET|FLASH|CAJU|SWILE|IFOOD|BENEF|VALE|REFEI|ALIMENT|VOUCHER|CARTAO|VALIDADE|VALID|THRU|SALDO|MASTERCARD|VISA|ELO|DEBITO|CREDITO|DISPON|EXTRATO|APP/;
+  function parseCard(text) {
+    const raw = String(text || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const lines = raw.map(norm);
+    const all = lines.join("\n");
+    const res = { source: "celular", kind: /SALDO|DISPON|EXTRATO/.test(all) ? "app" : "cartao", issuer: null, type: null, holder: null, last4: null, balance: null };
+    for (const [re, name] of ISSUER_RULES) if (re.test(all)) { res.issuer = name; break; }
+    if (/MULTI|FLEX|BENEFICIO/.test(all)) res.type = "flex";
+    else if (/REFEI|RESTAURANTE/.test(all)) res.type = "refeicao";
+    else if (/ALIMENT|MERCADO/.test(all)) res.type = "alimentacao";
+    // número do cartão: 13 a 19 dígitos (com espaços) ou mascarado (**** 1234) → só o final
+    const digits = all.replace(/[ .-](?=\d)/g, "");
+    const full = digits.match(/\d{13,19}/);
+    const masked = all.match(/(?:[*X•]{2,}[\s.-]*){1,3}(\d{4})\b|FINAL\s*:?\s*(\d{4})\b/);
+    if (masked) res.last4 = masked[1] || masked[2];
+    else if (full) res.last4 = full[0].slice(-4);
+    // saldo (print do app)
+    lines.forEach((l, i) => {
+      if (res.balance !== null || !/SALDO|DISPON/.test(l)) return;
+      let v = amounts(l);
+      if (!v.length && lines[i + 1]) v = amounts(lines[i + 1]);
+      if (v.length) res.balance = v[0];
+    });
+    // titular: linha só com letras, 2 a 5 palavras, que não seja marca/rótulo
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (CARD_WORDS.test(l) || /\d/.test(l)) continue;
+      const words = l.split(/\s+/).filter(w => /^[A-Z]{2,}$/.test(w));
+      if (words.length >= 2 && words.length <= 5 && words.join(" ").length >= 6) {
+        res.holder = words.map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(" ").replace(/\b(De|Da|Do|Dos|Das|E)\b/g, m => m.toLowerCase());
+        break;
+      }
+    }
+    return res;
+  }
+
+  window.ReceiptReader = { readText, parse, parseCard, prepare };
 })();

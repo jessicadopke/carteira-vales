@@ -89,6 +89,8 @@ Extraia os dados no formato pedido. Regras:
     [/alelo/i, "Alelo"], [/pluxee|sodexo/i, "Pluxee (Sodexo)"], [/ticket/i, "Ticket"], [/\bvr\b|vr ?benef/i, "VR"],
     [/flash/i, "Flash"], [/caju/i, "Caju"], [/ifood/i, "iFood Benefícios"], [/swile/i, "Swile"], [/\bben\b/i, "Ben"],
   ];
+  // "CARLA DE SOUZA" → "Carla de Souza"
+  const nameCase = s => s.toLowerCase().replace(/(^|\s)\p{L}/gu, m => m.toUpperCase()).replace(/\b(De|Da|Do|Dos|Das|E)\b/g, m => m.toLowerCase());
   const issuerOf = s => { if (!s) return null; for (const [re, n] of ISSUER_NAMES) if (re.test(s)) return n; return null; };
 
   // Converte a resposta do Gemini para o formato de ReceiptReader.parse()
@@ -150,6 +152,53 @@ Extraia os dados no formato pedido. Regras:
     return { parsed: toParsed(json), raw: JSON.stringify(json, null, 2), model };
   }
 
+  // ---------- cadastro de cartão por foto ----------
+  // Foto do cartão (frente) ou print do app do emissor. Nunca pede o número completo: só os 4 últimos dígitos.
+  const CARD_SCHEMA = {
+    type: "OBJECT",
+    properties: {
+      tipo_imagem: { type: "STRING", enum: ["cartao", "app", "outro"], description: "cartao = foto do cartão físico; app = print/foto da tela do app do emissor" },
+      emissor: { type: "STRING", nullable: true, description: "VR, Alelo, Pluxee, Sodexo, Ticket, Flash, Caju, iFood, Swile, Ben ou outro" },
+      tipo: { type: "STRING", enum: ["alimentacao", "refeicao", "flex", "outro"] },
+      titular: { type: "STRING", nullable: true, description: "nome da pessoa impresso no cartão ou mostrado no app" },
+      final_cartao: { type: "STRING", nullable: true, description: "SOMENTE os 4 últimos dígitos do número do cartão" },
+      saldo: { type: "NUMBER", nullable: true, description: "saldo disponível mostrado (geralmente só em print do app), em reais" },
+    },
+    required: ["tipo_imagem", "tipo"],
+  };
+  const CARD_PROMPT = `A imagem é a foto de um cartão de benefício brasileiro (vale-alimentação, vale-refeição, multibenefício: VR, Alelo, Pluxee/Sodexo, Ticket, Flash, Caju, iFood Benefícios, Swile, Ben etc.) ou um print da tela do app do emissor.
+Extraia os dados no formato pedido. Regras:
+- NUNCA devolva o número completo do cartão nem o código de segurança. Em "final_cartao", só os 4 últimos dígitos.
+- "tipo": alimentacao (vale-alimentação, mercado), refeicao (vale-refeição, restaurante), flex (multibenefício com carteiras) ou outro.
+- "saldo": só se a imagem mostrar o saldo disponível. Valores em reais como número decimal. Use null quando não aparecer. Não invente.`;
+
+  async function readCard(blob, cfg, signal) {
+    const data = await toB64(blob);
+    const body = {
+      contents: [{ role: "user", parts: [{ text: CARD_PROMPT }, { inline_data: { mime_type: blob.type || "image/jpeg", data } }] }],
+      generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: CARD_SCHEMA },
+    };
+    let model = cfg.model || DEFAULT_MODEL, out;
+    try { out = await call(cfg.key, model, body, signal); }
+    catch (e) {
+      if (e.status === 404 && model !== FALLBACK_MODEL) { model = FALLBACK_MODEL; out = await call(cfg.key, model, body, signal); }
+      else throw e;
+    }
+    const text = (((out.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || "").join("") || "";
+    let j;
+    try { j = JSON.parse(text); } catch (e) { const err = new Error("resposta fora do formato"); err.status = 0; throw err; }
+    const last4 = String(j.final_cartao || "").replace(/\D/g, "").slice(-4);
+    return {
+      source: "gemini",
+      kind: j.tipo_imagem || "outro",
+      issuer: issuerOf(j.emissor),
+      type: ["alimentacao", "refeicao", "flex", "outro"].includes(j.tipo) ? j.tipo : null,
+      holder: j.titular ? nameCase(String(j.titular).trim().slice(0, 40)) : null,
+      last4: last4.length === 4 ? last4 : null,
+      balance: cents(j.saldo),
+    };
+  }
+
   // Confere se a chave funciona (lista os modelos; não gasta cota de geração).
   async function test(key, signal) {
     const res = await fetch(`${API}/models?pageSize=1`, { headers: { "x-goog-api-key": key }, signal });
@@ -160,5 +209,5 @@ Extraia os dados no formato pedido. Regras:
     return true;
   }
 
-  window.GeminiReader = { read, test, toParsed, explain, DEFAULT_MODEL };
+  window.GeminiReader = { read, readCard, test, toParsed, explain, DEFAULT_MODEL };
 })();
