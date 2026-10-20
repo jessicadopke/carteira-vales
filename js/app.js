@@ -20,7 +20,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.6.2";
+  const APP_VERSION = "1.7.0";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -493,6 +493,7 @@
       </section>
       ${peopleBar}
       ${renderCreditNotices(pendingCredits(cards))}
+      ${renderUpdateNotice()}
       ${backupWarn}
       ${renderCardToolbar()}
       <div id="cardArea">${renderCardArea()}</div>
@@ -586,7 +587,14 @@
         <button data-act="eye"><span class="t">${S.meta.hideValues ? "Mostrar valores" : "Esconder valores"}</span><span class="s">O mesmo que o botão de olho no topo.</span></button>
       </div>
       ${hasCrypto && S.meta.vault ? `<div class="section-head"><h2>Cofre</h2></div><div class="menu"><button data-act="m-master"><span class="t">Trocar senha mestra</span><span class="s">Recriptografa todas as senhas guardadas.</span></button></div>` : ""}
-      ${S.installEvt ? `<div class="menu"><button data-act="install"><span class="t">Instalar o app</span><span class="s">Ícone na tela inicial, tela cheia e uso sem internet.</span></button></div>` : ""}
+      <div class="section-head"><h2>Sobre o app</h2></div>
+      <div class="menu">
+        ${S.updateAvailable
+          ? `<button data-act="update-now"><span class="t">Atualizar para a versão ${esc(S.updateAvailable)}</span><span class="s">Você está na ${APP_VERSION}. Seus cartões, extratos e senhas não são afetados.</span></button>`
+          : `<button data-act="update-check"><span class="t">Buscar atualização</span><span class="s">Versão instalada: ${APP_VERSION}${S.lastUpdateCheck ? ` · verificado às ${new Date(S.lastUpdateCheck).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : ""}.</span></button>`}
+        <button data-act="update-force"><span class="t">Recarregar o app</span><span class="s">Baixa de novo todos os arquivos do app. Use se algo parecer desatualizado.</span></button>
+        ${S.installEvt ? `<button data-act="install"><span class="t">Instalar o app</span><span class="s">Ícone na tela inicial, tela cheia e uso sem internet.</span></button>` : ""}
+      </div>
       <p class="foot num">Ciclo · do crédito ao próximo crédito · versão ${APP_VERSION}</p>`;
   }
 
@@ -678,6 +686,48 @@
         if (ok) closeSheet(); else { $("gSave").disabled = false; $("gSave").textContent = "Testar e salvar"; }
       });
     }, { secret: true });
+  }
+
+  // ---------- atualização do app ----------
+  // version.json (na raiz do site) traz a versão publicada. Compara com APP_VERSION;
+  // se for maior, oferece atualizar: limpa a cópia offline do app (não os dados) e recarrega.
+  const newerThan = (a, b) => {
+    const pa = String(a).split(".").map(Number), pb = String(b).split(".").map(Number);
+    for (let i = 0; i < 3; i++) { if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0); }
+    return false;
+  };
+  async function checkUpdate(manual) {
+    if (!navigator.onLine) { if (manual) toast("Sem internet. Conecte-se para buscar atualização."); return null; }
+    try {
+      const res = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const v = String((await res.json()).version || "");
+      const before = S.updateAvailable;
+      S.lastUpdateCheck = Date.now();
+      S.updateAvailable = newerThan(v, APP_VERSION) ? v : null;
+      if (manual && !S.updateAvailable) toast(`Você já está na versão mais recente (${APP_VERSION}).`);
+      if (S.loaded && !$("scrim") && before !== S.updateAvailable) render();
+      return S.updateAvailable;
+    } catch (e) {
+      console.warn("atualização", e);
+      if (manual) toast("Não foi possível verificar agora. Tente de novo em instantes.");
+      return null;
+    }
+  }
+  async function applyUpdate() {
+    if (!navigator.onLine) { toast("Sem internet. Conecte-se para atualizar."); return; }
+    toast("Atualizando…");
+    try {
+      const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+      if (reg) await reg.update().catch(() => {});
+      // Só a cópia offline do programa; cartões, extratos e senhas ficam no IndexedDB e não são tocados.
+      if (window.caches) for (const k of await caches.keys()) await caches.delete(k);
+    } catch (e) { console.warn("atualização", e); }
+    location.reload();
+  }
+  function renderUpdateNotice() {
+    if (!S.updateAvailable) return "";
+    return `<div class="notice info"><span>A versão <b class="num">${esc(S.updateAvailable)}</b> do Ciclo está disponível (você está na ${APP_VERSION}).</span><span class="actions"><button class="btn small primary" data-act="update-now">Atualizar</button></span></div>`;
   }
 
   // ---------- câmera ou galeria ----------
@@ -1978,6 +2028,15 @@
       case "m-master": changeMasterSheet(); break;
       case "m-theme": themeSheet(); break;
       case "m-gemini": geminiSheet(); break;
+      case "update-check": {
+        el.querySelector(".s").textContent = "Verificando…";
+        await checkUpdate(true);
+        render(); break;
+      }
+      case "update-now": applyUpdate(); break;
+      case "update-force":
+        confirmSheet("Recarregar o app?", "O app baixa de novo todos os seus arquivos e reinicia. Seus cartões, extratos, fotos e senhas não são afetados. Precisa de internet.", "Recarregar", async () => { applyUpdate(); return true; });
+        break;
     }
   });
   // As buscas redesenham só a própria lista, para o teclado não fechar a cada letra.
@@ -2000,7 +2059,11 @@
   window.addEventListener("scroll", () => $("appbar").classList.toggle("scrolled", window.scrollY > 4), { passive: true });
   window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); S.installEvt = e; renderTop(); });
   window.addEventListener("appinstalled", () => { S.installEvt = null; renderTop(); toast("App instalado."); });
-  document.addEventListener("visibilitychange", () => { if (document.hidden) lockVault(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { lockVault(); return; }
+    // ao voltar para o app, verifica de novo se passou mais de 6 horas
+    if (!S.lastUpdateCheck || Date.now() - S.lastUpdateCheck > 6 * 3600 * 1000) checkUpdate(false);
+  });
 
   // ---------- inicialização ----------
   (async () => {
@@ -2013,6 +2076,7 @@
       S.cards = cards; S.txs = txs; S.meta = meta || {}; S.loaded = true;
       history.replaceState({ home: true }, "");
       render();
+      setTimeout(() => checkUpdate(false), 1500);
       const acao = new URLSearchParams(location.search).get("acao");
       if (acao && S.cards.length) {
         history.replaceState({ home: true }, "", location.pathname);
