@@ -20,7 +20,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.5.0";
+  const APP_VERSION = "1.6.0";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -575,6 +575,10 @@
         <button data-act="m-photos"><span class="t">Fotos dos cupons</span><span class="s">Espaço usado e limpeza de fotos antigas.</span></button>
         <button data-act="m-about"><span class="t">Onde ficam os dados</span><span class="s">Como não perder nada ao trocar de celular.</span></button>
       </div>
+      <div class="section-head"><h2>Leitura de cupons</h2></div>
+      <div class="menu">
+        <button data-act="m-gemini"><span class="t">Gemini</span><span class="s">${S.meta.gemini && S.meta.gemini.enabled && S.meta.gemini.key ? "Ligado: as fotos são lidas pelo Gemini, com o leitor do celular como reserva." : "Desligado: as fotos são lidas só no celular, sem internet."}</span></button>
+      </div>
       <div class="section-head"><h2>Aparência</h2></div>
       <div class="menu">
         <button data-act="m-theme"><span class="t">Tema</span><span class="s">Agora: ${THEMES[themeNow()].toLowerCase()}. ${THEME_HINT[themeNow()]}</span></button>
@@ -614,6 +618,57 @@
         closeSheet();
       }));
     });
+  }
+
+  // ---------- leitura de cupons com o Gemini (opcional) ----------
+  // A chave fica só neste celular (S.meta.gemini) e não vai para o backup.
+  const geminiOn = () => !!(S.meta.gemini && S.meta.gemini.enabled && S.meta.gemini.key && navigator.onLine && window.GeminiReader);
+  function geminiSheet() {
+    const g = S.meta.gemini || {};
+    openSheet(`
+      <h3>Leitura de cupons com o Gemini</h3>
+      <p class="hint">Com o Gemini ligado, a foto do cupom é enviada para o Google, que devolve os dados lidos. A leitura costuma acertar mais, principalmente em cupom térmico apagado. Sem internet, ou se o Gemini falhar, o app usa o leitor do próprio celular.</p>
+      <form id="gForm" class="sform" autocomplete="off">
+        <label class="check"><input type="checkbox" id="gOn" ${g.enabled ? "checked" : ""}> <span>Usar o Gemini para ler os cupons</span></label>
+        <label class="field"><span>Chave de API do Google AI Studio</span><input id="gKey" type="password" autocomplete="off" spellcheck="false" placeholder="Cole aqui a chave (começa com AIza…)" value="${esc(g.key || "")}"></label>
+        <label class="check"><input type="checkbox" id="gShow"> <span>Mostrar a chave</span></label>
+        <details class="raw"><summary>Avançado</summary>
+          <label class="field" style="margin-top:10px"><span>Modelo</span><input id="gModel" autocomplete="off" spellcheck="false" value="${esc(g.model || GeminiReader.DEFAULT_MODEL)}"></label>
+          <span class="hint">O padrão (${GeminiReader.DEFAULT_MODEL}) sempre aponta para o Gemini Flash mais recente.</span>
+        </details>
+        <div class="notice info"><span><b>Privacidade:</b> no plano gratuito do Gemini, o Google pode usar as fotos enviadas para melhorar os produtos dele. Uma NFC-e pode trazer CPF e o final do cartão. Ativar o faturamento no Google AI Studio impede esse uso.</span></div>
+        <p class="hint">A chave fica guardada só neste celular e não entra no backup. Para protegê-la, restrinja a chave ao site <b>jessicadopke.github.io</b> no Google Cloud Console.</p>
+        <div class="err" id="gErr"></div>
+        <div class="btnrow">
+          <button class="btn primary" type="submit" id="gSave">Testar e salvar</button>
+          <button class="btn" type="button" data-close>Cancelar</button>
+          ${g.key ? `<button class="btn danger" type="button" id="gDel">Remover chave</button>` : ""}
+        </div>
+      </form>`, () => {
+      $("gShow").addEventListener("change", e => { $("gKey").type = e.target.checked ? "text" : "password"; });
+      $("gDel") && $("gDel").addEventListener("click", async () => {
+        const ok = await run(() => Store.setMeta({ ...S.meta, gemini: { enabled: false, key: "", model: g.model || "" } }), "Chave do Gemini removida.");
+        if (ok) closeSheet();
+      });
+      $("gForm").addEventListener("submit", async e => {
+        e.preventDefault();
+        const key = $("gKey").value.trim(), enabled = $("gOn").checked, model = $("gModel").value.trim() || GeminiReader.DEFAULT_MODEL;
+        $("gErr").textContent = "";
+        if (enabled && !key) { $("gErr").textContent = "Cole a chave de API para ligar o Gemini."; return; }
+        if (key && !/^[\w-]{20,}$/.test(key)) { $("gErr").textContent = "Essa chave não parece válida. Copie de novo no Google AI Studio, sem espaços."; return; }
+        if (key) {
+          $("gSave").disabled = true; $("gSave").textContent = "Testando…";
+          try { await GeminiReader.test(key); }
+          catch (err) {
+            $("gErr").textContent = GeminiReader.explain(err);
+            $("gSave").disabled = false; $("gSave").textContent = "Testar e salvar";
+            return;
+          }
+        }
+        const ok = await run(() => Store.setMeta({ ...S.meta, gemini: { enabled, key, model } }), enabled ? "Gemini ligado. Os próximos cupons serão lidos por ele." : "Configuração salva.");
+        if (ok) closeSheet(); else { $("gSave").disabled = false; $("gSave").textContent = "Testar e salvar"; }
+      });
+    }, { secret: true });
   }
 
   // ---------- botão + ----------
@@ -1322,14 +1377,15 @@
 
   // ---------- cupom fiscal ----------
   // Foto guardada: lado maior ≤ 1280 px, tons de cinza, JPEG leve (~60–150 KB), ainda legível para conferir o cupom.
-  async function shrink(file, max = 1280, q = 0.6) {
+  // Para o Gemini: colorida, lado maior ≤ 2000 px (shrink(file, 2000, 0.85, false)).
+  async function shrink(file, max = 1280, q = 0.6, gray = true) {
     try {
       const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
       const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
       const cv = document.createElement("canvas");
       cv.width = Math.round(bmp.width * scale); cv.height = Math.round(bmp.height * scale);
       const ctx = cv.getContext("2d");
-      ctx.filter = "grayscale(1) contrast(1.15)";
+      if (gray) ctx.filter = "grayscale(1) contrast(1.15)";
       ctx.drawImage(bmp, 0, 0, cv.width, cv.height);
       return (await new Promise(r => cv.toBlob(r, "image/jpeg", q))) || file;
     } catch (e) { return file; }
@@ -1356,10 +1412,34 @@
         <div class="progress" style="margin-top:10px"><span id="scanBar"></span></div>
         <div class="btnrow" style="margin-top:12px"><button class="btn" id="scanStop">Preencher à mão</button></div>
       </div>`);
-    sheetCleanup = () => { alive = false; URL.revokeObjectURL(url); scanQueue.length = 0; };
+    const ctl = window.AbortController ? new AbortController() : null;
+    sheetCleanup = () => { alive = false; ctl && ctl.abort(); URL.revokeObjectURL(url); scanQueue.length = 0; };
     const stored = shrink(file);
-    $("scanStop").addEventListener("click", async () => { alive = false; reviewForm(sheet, await stored, presetCardId, null, "Preencha os dados do cupom.", ""); });
+    $("scanStop").addEventListener("click", async () => { alive = false; ctl && ctl.abort(); reviewForm(sheet, await stored, presetCardId, null, "Preencha os dados do cupom.", ""); });
+
+    // 1º: Gemini, se estiver ligado, com chave e com internet. Se falhar, segue para o leitor do celular.
+    let geminiFail = null;
+    if (geminiOn()) {
+      $("scanStatus").textContent = "Lendo com o Gemini…";
+      $("scanBar").parentElement.hidden = true;
+      try {
+        const img = await shrink(file, 2000, 0.85, false);
+        const g = await GeminiReader.read(img, { key: S.meta.gemini.key, model: S.meta.gemini.model }, ctl && ctl.signal);
+        if (!alive || !$("scanBody")) return;
+        const p = g.parsed;
+        const msg = !p.legible ? "O Gemini achou que a foto não é um comprovante ou está ilegível. Confira os dados." : !p.found.length ? "O Gemini não encontrou valores nesta foto. Confira ou preencha à mão." : null;
+        reviewForm(sheet, await stored, presetCardId, p, msg, g.raw);
+        return;
+      } catch (e) {
+        if (!alive || !$("scanBody")) return;
+        console.warn("gemini", e);
+        geminiFail = GeminiReader.explain(e);
+        $("scanBar").parentElement.hidden = false;
+      }
+    }
+
     const labels = { "preparando a foto": "Preparando a foto…", "loading tesseract core": "Carregando o leitor…", "initializing tesseract": "Carregando o leitor…", "loading language traineddata": "Carregando o português…", "initializing api": "Carregando o leitor…", "recognizing text": "Lendo o texto do cupom…" };
+    if (geminiFail) $("scanStatus").textContent = `${geminiFail} Usando o leitor do celular…`;
     try {
       const text = await ReceiptReader.readText(file, (status, p) => {
         if (!alive || !$("scanStatus")) return;
@@ -1369,7 +1449,8 @@
       if (!alive || !$("scanBody")) return;
       const parsed = ReceiptReader.parse(text);
       const empty = !parsed.found.length;
-      reviewForm(sheet, await stored, presetCardId, parsed, empty ? "Não encontrei valores nesta foto. Confira se o cupom está inteiro, reto e bem iluminado, ou preencha à mão." : null, text);
+      const prefix = geminiFail ? `Gemini: ${geminiFail} A foto foi lida pelo leitor do celular. ` : "";
+      reviewForm(sheet, await stored, presetCardId, parsed, empty ? prefix + "Não encontrei valores nesta foto. Confira se o cupom está inteiro, reto e bem iluminado, ou preencha à mão." : (prefix ? prefix + "Confira os valores com atenção." : null), text);
     } catch (e) {
       console.error(e);
       if (!alive || !$("scanBody")) return;
@@ -1547,8 +1628,13 @@
     const others = pays.filter(p => p.kind !== "vale").map(p => ({ kind: p.kind, amount: p.amount }));
     // Escolhe um cartão para cada parte, sem repetir, do mais provável para o menos provável
     const taken = new Set();
+    // Quando a leitura separa as pistas de cada vale (emissor, final, saldo), cada linha usa só as suas.
+    const perVale = Array.isArray(d.vales) && d.vales.length === valeAmts.length ? d.vales : null;
     const parts = (valeAmts.length ? valeAmts : [0]).map((a, i) => {
-      const r = rankCards(d, a, saldos, presetCardId).filter(x => !taken.has(x.card.id));
+      const v = perVale && perVale[i];
+      const dRow = v ? { ...d, issuer: v.issuer || null, last4: v.last4 || null, last4s: v.last4 ? [v.last4] : [] } : d;
+      const sRow = v && v.saldo !== null ? [v.saldo] : v ? [] : saldos;
+      const r = rankCards(dRow, a, sRow, presetCardId).filter(x => !taken.has(x.card.id));
       const pick = r[0] && r[0].score > 0 ? r[0] : null;
       if (pick) taken.add(pick.card.id);
       const confident = pick && pick.score >= 50 && (!r[1] || pick.score - r[1].score >= 20);
@@ -1562,7 +1648,7 @@
     const payLine = pays.length > 1 ? `<span>Pagamento: ${esc(pays.map(p => `${p.kind === "vale" ? "vale" : OTHER_KINDS[p.kind] || p.kind} ${brl(p.amount)}`).join(" + "))}</span>` : "";
     const summary = d.found && d.found.length ? `
       <div class="found">
-        <span><b>Encontrado no cupom:</b> ${esc(d.found.join(", "))}${d.issuer ? ` · ${esc(d.issuer)}` : ""}${d.last4 ? ` final ${esc(d.last4)}` : ""}</span>
+        <span><b>${d.source === "gemini" ? "Lido pelo Gemini" : "Lido no celular"}:</b> ${esc(d.found.join(", "))}${d.issuer ? ` · ${esc(d.issuer)}` : ""}${d.last4 ? ` final ${esc(d.last4)}` : ""}</span>
         ${payLine}
         <span>${saldos.length ? `Saldo${saldos.length > 1 ? "s" : ""} do vale impresso${saldos.length > 1 ? "s" : ""}: <b class="num">${saldos.map(brl).join(" · ")}</b>${d.balanceMoment === "antes_compra" ? " (já descontada esta compra)" : ""}` : "O cupom não mostra o saldo do cartão: o saldo daqui será descontado pelo valor pago."}</span>
         ${suggestLine}
@@ -1582,7 +1668,7 @@
           <label class="field"><span>Saldo do vale impresso no cupom (se houver)</span><input id="rSaldo" class="num" inputmode="decimal" placeholder="não informado" value="${saldos.length === 1 && saldos[0] >= 0 ? fmtInput(saldos[0]) : ""}"></label>
           <label class="check" id="rUseWrap"><input type="checkbox" id="rUse"> <span id="rUseTxt"></span></label>
         </div>
-        ${rawText ? `<details class="raw"><summary>Ver texto lido da foto</summary><pre></pre></details>` : ""}
+        ${rawText ? `<details class="raw"><summary>${d.source === "gemini" ? "Ver resposta do Gemini" : "Ver texto lido da foto"}</summary><pre></pre></details>` : ""}
         <div class="err" id="rErr"></div>
         <div class="btnrow">
           <button class="btn primary" type="submit" id="rSave">Salvar</button>
@@ -1873,6 +1959,7 @@
       case "m-about": aboutSheet(); break;
       case "m-master": changeMasterSheet(); break;
       case "m-theme": themeSheet(); break;
+      case "m-gemini": geminiSheet(); break;
     }
   });
   // As buscas redesenham só a própria lista, para o teclado não fechar a cada letra.
