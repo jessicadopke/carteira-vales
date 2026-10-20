@@ -20,7 +20,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.6.0";
+  const APP_VERSION = "1.6.1";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -671,6 +671,11 @@
     }, { secret: true });
   }
 
+  // ---------- câmera ou galeria ----------
+  // "Ler cupom" abre a câmera traseira direto (capture="environment"); a galeria fica como opção secundária.
+  function openCamera(cardId) { S.scanCard = cardId || null; $("camIn").click(); }
+  function openGallery(cardId) { S.scanCard = cardId || null; $("fileIn").click(); }
+
   // ---------- botão + ----------
   function actionSheet() {
     if (!S.cards.length) { cardSheet(null); return; }
@@ -683,11 +688,13 @@
         <button class="qa" data-q="cupom">${ICON.cupom}Ler cupom</button>
         <button class="qa" data-q="credito">${ICON.credito}Crédito</button>
         <button class="qa" data-q="cartao">${ICON.cartao}Cartão</button>
-      </div>`, sheet => {
+      </div>
+      <button class="linkbtn" data-q="galeria">Ler cupom de uma foto da galeria</button>`, sheet => {
       sheetCleanup = () => $("plusBtn").classList.remove("open");
       sheet.querySelectorAll("[data-q]").forEach(b => b.addEventListener("click", () => {
         const q = b.dataset.q;
-        if (q === "cupom") { closeSheet(); S.scanCard = cardId; $("fileIn").click(); }
+        if (q === "cupom") { closeSheet(); openCamera(cardId); }
+        else if (q === "galeria") { closeSheet(); openGallery(cardId); }
         else if (q === "gasto") txSheet(cardId, "debit");
         else if (q === "credito") txSheet(cardId, "credit");
         else cardSheet(null);
@@ -983,6 +990,7 @@
         <button class="qa" data-act="new-tx" data-id="${c.id}" data-kind="credit">${ICON.credito}Crédito</button>
         <button class="qa" data-act="adjust" data-id="${c.id}">${ICON.corrigir}Corrigir</button>
       </div>
+      <button class="linkbtn" data-act="scan-gallery" data-id="${c.id}">Ler cupom de uma foto da galeria</button>
       <section class="panel">
         <div class="panel-head">
           <h2>${isCurrent ? "Período atual" : "Período"}</h2>
@@ -1901,7 +1909,8 @@
       case "edit-card": card && cardSheet(card); break;
       case "new-tx": txSheet(id, el.dataset.kind); break;
       case "adjust": card && adjustSheet(card); break;
-      case "scan": S.scanCard = id || null; $("fileIn").click(); break;
+      case "scan": openCamera(id || null); break;
+      case "scan-gallery": openGallery(id || null); break;
       case "vault": vaultSheet(); break;
       case "backup": backupSheet(); break;
       case "import": $("importIn").click(); break;
@@ -1976,6 +1985,7 @@
   $("eyeBtn").addEventListener("click", toggleEye);
   $("lockBtn").addEventListener("click", () => lockVault("Cofre trancado."));
   $("fileIn").addEventListener("change", e => { const files = e.target.files; if (files && files.length) startScan(files, S.scanCard); e.target.value = ""; });
+  $("camIn").addEventListener("change", e => { const files = e.target.files; if (files && files.length) startScan(files, S.scanCard); e.target.value = ""; });
   $("importIn").addEventListener("change", e => { const f = e.target.files && e.target.files[0]; if (f) importFile(f); e.target.value = ""; });
   $("installBtn").addEventListener("click", installApp);
   window.addEventListener("scroll", () => $("appbar").classList.toggle("scrolled", window.scrollY > 4), { passive: true });
