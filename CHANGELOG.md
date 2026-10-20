@@ -10,6 +10,14 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
 A versão em uso aparece em **Ajustes**, no rodapé.
 
+## 1.8.3 — 20/10/2026
+
+### Corrigido
+- **Espera longa quando o Gemini não responde:** cada modelo do Gemini podia esperar até 25 segundos, e o app tentava três modelos. Agora a espera pelo Gemini é de no máximo 30 segundos **no total**. Se ele não responder nesse tempo, o app passa direto para o leitor do celular, sem tentar outros modelos.
+
+### Novo
+- **"Como foi lido"**, na tela de conferência do cupom, mostra cada tentativa do Gemini (modelo, resultado e tempo), ou por que ele não foi usado (sem chave, desligado, sem internet), e o tempo total da leitura. Serve para entender uma leitura demorada ou que não usou o Gemini.
+
 ## 1.8.2 — 20/10/2026
 
 ### Mudou
