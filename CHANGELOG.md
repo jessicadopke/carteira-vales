@@ -10,6 +10,13 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
 A versão em uso aparece em **Ajustes**, no rodapé.
 
+## 1.6.2 — 20/10/2026
+
+### Corrigido
+- **Chave do Gemini recusada sem motivo:** ao colar uma chave válida, o app podia dizer "Essa chave não parece válida". A checagem de formato feita no próprio app era rígida demais e foi removida.
+  - O app agora limpa sozinho o que costuma vir junto ao copiar: espaços, quebras de linha, aspas, caracteres invisíveis e um `GEMINI_API_KEY=` na frente.
+  - Quem decide se a chave vale é o Google, no "Testar e salvar". Se ela estiver errada, aparece a mensagem dele.
+
 ## 1.6.1 — 20/10/2026
 
 ### Mudou
