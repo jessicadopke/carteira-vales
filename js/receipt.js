@@ -26,9 +26,11 @@
   // Cupom térmico: tons de cinza, contraste esticado e binarização (Otsu).
   async function prepare(blob) {
     const bmp = await createImageBitmap(blob, { imageOrientation: "from-image" });
+    // Resolução bastante para o texto do cupom, sem pesar: uma foto de celular (12 MP ou mais) vira no
+    // máximo ~3,5 MP. Acima disso o OCR fica bem mais lento sem ler melhor.
     let scale = 1;
-    if (bmp.width < 1300) scale = 1300 / bmp.width;
-    scale = Math.min(scale, 3200 / Math.max(bmp.width, bmp.height));
+    if (bmp.width < 1100) scale = 1100 / bmp.width;
+    scale = Math.min(scale, 2400 / Math.max(bmp.width, bmp.height), Math.sqrt(3.5e6 / (bmp.width * bmp.height)));
     const cv = document.createElement("canvas");
     cv.width = Math.round(bmp.width * scale);
     cv.height = Math.round(bmp.height * scale);
@@ -72,6 +74,9 @@
     ctx.putImageData(img, 0, 0);
     return cv;
   }
+
+  // Carrega o leitor antes de a foto chegar (por exemplo, enquanto a câmera está aberta).
+  const warm = () => { getWorker().catch(() => {}); };
 
   async function readText(blob, onProgress) {
     progressCb = onProgress || null;
@@ -277,5 +282,5 @@
     return res;
   }
 
-  window.ReceiptReader = { readText, parse, parseCard, prepare };
+  window.ReceiptReader = { warm, readText, parse, parseCard, prepare };
 })();

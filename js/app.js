@@ -20,7 +20,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.8.1";
+  const APP_VERSION = "1.8.2";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -755,8 +755,10 @@
 
   // ---------- câmera ou galeria ----------
   // "Ler cupom" abre a câmera traseira direto (capture="environment"); a galeria fica como opção secundária.
-  function openCamera(cardId) { S.scanCard = cardId || null; $("camIn").click(); }
-  function openGallery(cardId) { S.scanCard = cardId || null; $("fileIn").click(); }
+  // Sem o Gemini, o leitor do celular já vai carregando enquanto a câmera ou a galeria estão abertas.
+  const warmReader = () => { if (!geminiOn() && window.ReceiptReader) ReceiptReader.warm(); };
+  function openCamera(cardId) { S.scanCard = cardId || null; warmReader(); $("camIn").click(); }
+  function openGallery(cardId) { S.scanCard = cardId || null; warmReader(); $("fileIn").click(); }
 
   // ---------- botão + ----------
   function actionSheet() {
@@ -1552,7 +1554,8 @@
       $("scanStatus").textContent = "Lendo com o Gemini…";
       $("scanBar").parentElement.hidden = true;
       try {
-        const img = await shrink(file, 2000, 0.85, false);
+        // 1600 px bastam para o Gemini ler o cupom; foto menor sobe e é processada mais rápido
+        const img = await shrink(file, 1600, 0.8, false);
         const g = await GeminiReader.read(img, { key: S.meta.gemini.key, model: S.meta.gemini.model }, ctl && ctl.signal);
         if (!alive || !$("scanBody")) return;
         const p = g.parsed;
@@ -1769,26 +1772,51 @@
       const confident = pick && pick.score >= 50 && (!r[1] || pick.score - r[1].score >= 20);
       return { amount: a, pick, confident, cardId: pick ? pick.card.id : i === 0 ? (presetCardId || defaultCardId()) : "" };
     });
-    // Cartões do cupom que não estão na carteira: final ou emissor que nenhum cartão cadastrado tem,
-    // sem um sinal forte (final ou saldo que fecha) apontando para um cartão existente.
+    // Cartões do cupom que podem não estar na carteira. Sem um sinal forte (final ou saldo que fecha)
+    // apontando para um cartão cadastrado:
+    // - "novo": o cupom mostra um final ou emissor que nenhum cartão cadastrado tem;
+    // - "saldo": o saldo impresso não fecha com nenhum cartão cadastrado;
+    // nesses dois casos o app não chuta um cartão: você escolhe ou cadastra.
+    // - "fraco": o cartão sugerido veio só de pistas fracas (emissor, loja); fica sugerido, com a opção de cadastrar outro.
     const unknown = parts.map((pt, i) => {
       const v = perVale ? perVale[i] : i === 0 ? { issuer: d.issuer || null, last4: d.last4 || null, saldo: saldos.length === 1 ? saldos[0] : null } : null;
-      if (!v || (!v.issuer && !v.last4)) return null;
+      if (!v || (!v.issuer && !v.last4 && (v.saldo === null || v.saldo === undefined))) return null;
       if (pt.pick && pt.pick.reasons.some(r => /^final |saldo/.test(r))) return null;
+      const saldo = v.saldo === undefined ? null : v.saldo;
       const lastUnknown = !!v.last4 && !S.cards.some(c => c.last4 === v.last4);
       const issuerUnknown = !!v.issuer && !S.cards.some(c => c.issuer === v.issuer);
-      if (!lastUnknown && !issuerUnknown) return null;
-      pt.cardId = ""; // não chuta um cartão errado: escolha ou cadastre
-      pt.pick = null;
-      return { i, issuer: v.issuer, last4: v.last4, saldo: v.saldo === undefined ? null : v.saldo, amount: pt.amount };
+      const saldoOff = saldo !== null && saldo >= 0 && !S.cards.some(c => Math.abs((c.balance || 0) - pt.amount - saldo) <= 1 || Math.abs((c.balance || 0) - saldo) <= 1);
+      const base = { i, issuer: v.issuer, last4: v.last4, saldo, amount: pt.amount };
+      if (lastUnknown || issuerUnknown || saldoOff) {
+        const weak = pt.pick && pt.pick.card;
+        // "É o X?" só quando o cupom não contradiz esse cartão (outro final ou outro emissor)
+        const alt = weak && !(lastUnknown && weak.last4) && !(issuerUnknown) ? weak : null;
+        pt.cardId = ""; // não chuta um cartão errado: escolha ou cadastre
+        pt.pick = null;
+        return { ...base, kind: lastUnknown || issuerUnknown ? "novo" : "saldo", alt };
+      }
+      if (pt.pick && !pt.confident) return { ...base, kind: "fraco" };
+      return null;
     }).filter(Boolean);
-    const unknownHTML = unknown.map(u => `
-      <div class="notice" id="unk${u.i}">
-        <span>O cartão <b>${esc([u.issuer, u.last4 ? "final " + u.last4 : ""].filter(Boolean).join(" ") || "deste cupom")}</b>${u.amount ? ` (<span class="num">${brl(u.amount)}</span>)` : ""} não está cadastrado na sua carteira.</span>
-        <span class="actions"><button type="button" class="btn small primary" data-newcard="${u.i}">Cadastrar agora</button></span>
+    const unkLabel = u => esc([u.issuer, u.last4 ? "final " + u.last4 : ""].filter(Boolean).join(" ") || "deste cupom");
+    const unknownHTML = unknown.map(u => {
+      const amt = u.amount ? ` (<span class="num">${brl(u.amount)}</span>)` : "";
+      const text = u.kind === "novo"
+        ? `O cartão <b>${unkLabel(u)}</b>${amt} não está cadastrado na sua carteira.`
+        : u.kind === "saldo"
+          ? `O saldo impresso no cupom (<b class="num">${brl(u.saldo)}</b>)${u.issuer ? ` do ${esc(u.issuer)}` : ""} não fecha com nenhum cartão cadastrado. Pode ser um cartão que ainda não está na carteira.`
+          : `Se esta compra${amt} foi paga com um cartão que não está na carteira, cadastre na hora.`;
+      const btns = `<button type="button" class="btn small${u.kind === "fraco" ? "" : " primary"}" data-newcard="${u.i}">${u.kind === "fraco" ? "Cadastrar outro cartão" : "Cadastrar agora"}</button>`
+        + (u.alt ? `<button type="button" class="btn small" data-isit="${u.i}">É o ${esc(u.alt.name)}</button>` : "");
+      return `
+      <div class="notice${u.kind === "fraco" ? " info" : ""}" id="unk${u.i}">
+        <span>${text}</span>
+        <span class="actions">${btns}</span>
       </div>
-      <div id="ncBox${u.i}"></div>`).join("");
-    const suggestLine = parts.map((pt, i) => pt.pick && pt.pick.reasons.length
+      <div id="ncBox${u.i}"></div>`;
+    }).join("");
+    const hardUnknown = i => unknown.some(u => u.i === i && u.kind !== "fraco");
+    const suggestLine = parts.map((pt, i) => hardUnknown(i) ? "" : pt.pick && pt.pick.reasons.length
       ? `<span>${parts.length > 1 ? `Vale ${i + 1} (${brl(pt.amount)}): ` : "Cartão "}${pt.confident ? "identificado" : "provável"}: <b>${esc(pt.pick.card.name)}</b>${pt.pick.card.holder ? ` (${esc(pt.pick.card.holder)})` : ""} · ${esc(pt.pick.reasons.join(", "))}${pt.confident ? "" : " (confira o cartão)"}</span>`
       : S.cards.length > 1 ? `<span>${parts.length > 1 ? `Vale ${i + 1}: n` : "N"}ão consegui identificar o cartão pelo cupom. Escolha abaixo.</span>` : "").join("");
     const date = d.date || todayISO();
@@ -1836,7 +1864,25 @@
 
     // ---- cadastrar na hora o cartão que não está na carteira ----
     const typeFromCat = { Mercado: "alimentacao", Feira: "alimentacao", Restaurante: "refeicao", Lanche: "refeicao", Padaria: "refeicao", Delivery: "refeicao" };
+    // escolhe um cartão para o vale da linha k, como se fosse pelo seletor
+    const selectRow = (k, cardId) => {
+      const row = [...sheet.querySelectorAll('#rsRows .split-row[data-kind="vale"]')][k];
+      if (!row) return;
+      const hidden = $(row.dataset.pid);
+      hidden.value = cardId;
+      $(row.dataset.pid + "Btn").innerHTML = pickLabel(cardById(cardId));
+      hidden.dispatchEvent(new Event("input", { bubbles: true }));
+    };
     sheet.addEventListener("click", async e => {
+      const isit = e.target.closest("[data-isit]");
+      if (isit) {
+        const u = unknown.find(x => x.i === +isit.dataset.isit);
+        selectRow(u.i, u.alt.id);
+        $("ncBox" + u.i).innerHTML = "";
+        $("unk" + u.i).className = "notice info";
+        $("unk" + u.i).innerHTML = `<span><b>${esc(u.alt.name)}</b> escolhido para este vale.${u.kind === "saldo" ? " Como o saldo daqui não batia com o do cupom, confira abaixo a opção de usar o saldo do cupom." : ""}</span>`;
+        return;
+      }
       const open = e.target.closest("[data-newcard]");
       const save = e.target.closest("[data-ncsave]");
       const cancel = e.target.closest("[data-nccancel]");
@@ -1893,12 +1939,7 @@
         if (!ok) { save.disabled = false; return; }
         askPersist();
         // escolhe o cartão novo para este vale
-        if (row) {
-          const hidden = $(row.dataset.pid);
-          hidden.value = newCard.id;
-          $(row.dataset.pid + "Btn").innerHTML = pickLabel(cardById(newCard.id));
-          hidden.dispatchEvent(new Event("input", { bubbles: true }));
-        }
+        selectRow(k, newCard.id);
         $("ncBox" + k).innerHTML = "";
         $("unk" + k).className = "notice info";
         $("unk" + k).innerHTML = `<span>Cartão <b>${esc(name)}</b> cadastrado e escolhido para este vale. Agora é só salvar o cupom.</span>`;

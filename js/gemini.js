@@ -5,7 +5,10 @@
 
   const API = "https://generativelanguage.googleapis.com/v1beta";
   const DEFAULT_MODEL = "gemini-flash-latest";
-  const FALLBACK_MODEL = "gemini-2.5-flash";
+  // Quando o modelo escolhido está sobrecarregado, sem cota ou não existe, tenta estes, nesta ordem.
+  // Cada modelo tem a sua própria cota e capacidade no Google.
+  const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-flash-lite-latest"];
+  const TIMEOUT_MS = 25000; // tempo máximo de cada tentativa; depois disso o app usa o leitor do celular
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
 
   // Formato da resposta pedido ao Gemini (subconjunto do OpenAPI aceito pela API)
@@ -48,24 +51,80 @@ Extraia os dados no formato pedido. Regras:
 - "categoria": a que melhor descreve a loja.`;
 
   async function call(key, model, body, signal) {
-    const res = await fetch(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify(body),
-      signal,
-    });
-    if (!res.ok) {
-      let msg = "";
-      try { msg = (await res.json()).error.message || ""; } catch (e) {}
-      const err = new Error(msg || "HTTP " + res.status);
-      err.status = res.status;
-      throw err;
+    // Prazo por tentativa, sem perder o "cancelar" de quem chamou.
+    const ctl = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, TIMEOUT_MS);
+    const stop = () => ctl.abort();
+    if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener("abort", stop, { once: true }); }
+    try {
+      const res = await fetch(`${API}/models/${encodeURIComponent(model)}:generateContent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+        body: JSON.stringify(body),
+        signal: ctl.signal,
+      });
+      if (!res.ok) {
+        let msg = "";
+        try { msg = (await res.json()).error.message || ""; } catch (e) {}
+        const err = new Error(msg || "HTTP " + res.status);
+        err.status = res.status;
+        throw err;
+      }
+      return await res.json();
+    } catch (e) {
+      if (timedOut) { const err = new Error("tempo esgotado"); err.name = "TimeoutError"; err.status = 0; throw err; }
+      throw e;
+    } finally {
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener("abort", stop);
     }
-    return res.json();
+  }
+
+  // Ler um cupom não precisa de "raciocínio" longo: desligá-lo deixa a resposta bem mais rápida.
+  // O Gemini 2.5 usa thinkingBudget; os modelos mais novos usam thinkingLevel.
+  const noThinking = new Set(); // modelos que recusaram a configuração de raciocínio
+  const thinkingFor = model => /gemini-2\.5-flash/.test(model) ? { thinkingBudget: 0 } : /gemini-[12]\./.test(model) ? null : { thinkingLevel: "low" };
+
+  // Tenta o modelo escolhido e, se ele falhar por sobrecarga, cota ou modelo inexistente, os de reserva.
+  async function generate(cfg, parts, schema, signal) {
+    const first = cfg.model || DEFAULT_MODEL;
+    const models = [first, ...FALLBACK_MODELS.filter(m => m !== first)];
+    let lastErr = null;
+    for (const model of models) {
+      const generationConfig = { temperature: 0, responseMimeType: "application/json", responseSchema: schema };
+      const th = !noThinking.has(model) && thinkingFor(model);
+      if (th) generationConfig.thinkingConfig = th;
+      const body = { contents: [{ role: "user", parts }], generationConfig };
+      try {
+        let out;
+        try { out = await call(cfg.key, model, body, signal); }
+        catch (e) {
+          // modelo que não aceita a configuração de raciocínio: repete sem ela
+          if (e.status === 400 && th && /think/i.test(e.message)) {
+            noThinking.add(model);
+            delete generationConfig.thinkingConfig;
+            out = await call(cfg.key, model, body, signal);
+          } else throw e;
+        }
+        const text = (((out.candidates || [])[0] || {}).content || {}).parts?.map(p => p.thought ? "" : p.text || "").join("") || "";
+        let json;
+        try { json = JSON.parse(text); } catch (e) { const err = new Error("resposta fora do formato"); err.status = 0; err.raw = text; throw err; }
+        return { json, model };
+      } catch (e) {
+        lastErr = e;
+        // Outro modelo só ajuda quando o problema é deste: inexistente, sem cota ou sobrecarregado.
+        const st = e.status;
+        if (!(st === 404 || st === 429 || st >= 500)) throw e;
+        console.warn("gemini", model, st, e.message);
+      }
+    }
+    throw lastErr;
   }
 
   // Explica o erro em português, para a tela de conferência e para o teste da chave.
   function explain(e) {
+    if (e && e.name === "TimeoutError") return "O Gemini demorou demais para responder.";
     if (e && e.name === "AbortError") return "A leitura foi interrompida.";
     if (!navigator.onLine) return "Sem internet.";
     const s = e && e.status;
@@ -74,7 +133,8 @@ Extraia os dados no formato pedido. Regras:
     if (s === 401 || s === 403) return "A chave de API foi recusada (confira a chave e as restrições dela no Google).";
     if (s === 404) return "O modelo do Gemini não foi encontrado.";
     if (s === 429) return "Limite de uso do Gemini atingido por agora. Tente mais tarde.";
-    if (s >= 500) return "O Gemini está fora do ar no momento.";
+    if (s === 503) return "O Gemini está sobrecarregado agora (erro 503 do Google). Costuma passar em alguns minutos.";
+    if (s >= 500) return `O Gemini teve um erro no Google (${s}).`;
     return "Não foi possível falar com o Gemini.";
   }
 
@@ -136,19 +196,7 @@ Extraia os dados no formato pedido. Regras:
   // Lê o cupom. cfg = { key, model }. Devolve { parsed, raw, model }.
   async function read(blob, cfg, signal) {
     const data = await toB64(blob);
-    const body = {
-      contents: [{ role: "user", parts: [{ text: PROMPT }, { inline_data: { mime_type: blob.type || "image/jpeg", data } }] }],
-      generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: SCHEMA },
-    };
-    let model = cfg.model || DEFAULT_MODEL, out;
-    try { out = await call(cfg.key, model, body, signal); }
-    catch (e) {
-      if (e.status === 404 && model !== FALLBACK_MODEL) { model = FALLBACK_MODEL; out = await call(cfg.key, model, body, signal); }
-      else throw e;
-    }
-    const text = (((out.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || "").join("") || "";
-    let json;
-    try { json = JSON.parse(text); } catch (e) { const err = new Error("resposta fora do formato"); err.status = 0; err.raw = text; throw err; }
+    const { json, model } = await generate(cfg, [{ text: PROMPT }, { inline_data: { mime_type: blob.type || "image/jpeg", data } }], SCHEMA, signal);
     return { parsed: toParsed(json), raw: JSON.stringify(json, null, 2), model };
   }
 
@@ -174,19 +222,7 @@ Extraia os dados no formato pedido. Regras:
 
   async function readCard(blob, cfg, signal) {
     const data = await toB64(blob);
-    const body = {
-      contents: [{ role: "user", parts: [{ text: CARD_PROMPT }, { inline_data: { mime_type: blob.type || "image/jpeg", data } }] }],
-      generationConfig: { temperature: 0, responseMimeType: "application/json", responseSchema: CARD_SCHEMA },
-    };
-    let model = cfg.model || DEFAULT_MODEL, out;
-    try { out = await call(cfg.key, model, body, signal); }
-    catch (e) {
-      if (e.status === 404 && model !== FALLBACK_MODEL) { model = FALLBACK_MODEL; out = await call(cfg.key, model, body, signal); }
-      else throw e;
-    }
-    const text = (((out.candidates || [])[0] || {}).content || {}).parts?.map(p => p.text || "").join("") || "";
-    let j;
-    try { j = JSON.parse(text); } catch (e) { const err = new Error("resposta fora do formato"); err.status = 0; throw err; }
+    const { json: j } = await generate(cfg, [{ text: CARD_PROMPT }, { inline_data: { mime_type: blob.type || "image/jpeg", data } }], CARD_SCHEMA, signal);
     const last4 = String(j.final_cartao || "").replace(/\D/g, "").slice(-4);
     return {
       source: "gemini",
