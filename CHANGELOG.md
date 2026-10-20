@@ -10,6 +10,17 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
 A versão em uso aparece em **Ajustes**, no rodapé.
 
+## 1.7.0 — 20/10/2026
+
+### Novo
+- **Atualizar o app pelo próprio app:**
+  - Em **Ajustes → Sobre o app**, o botão **Buscar atualização** mostra a versão instalada e verifica se há uma mais nova.
+  - Quando há, aparece **Atualizar para a versão X**, que baixa a versão nova e reinicia o app.
+- **Aviso automático:** ao abrir o app com internet (e de novo quando você volta a ele depois de algumas horas), o Início mostra "A versão X do Ciclo está disponível", com o botão **Atualizar**.
+- **Recarregar o app:** baixa de novo todos os arquivos, para quando algo parecer desatualizado.
+- Atualizar ou recarregar **não mexe** em cartões, extratos, fotos e senhas. Só a cópia offline do programa é trocada.
+- Novo arquivo `version.json` na raiz do site, com a versão publicada.
+
 ## 1.6.2 — 20/10/2026
 
 ### Corrigido

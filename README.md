@@ -71,6 +71,7 @@ fonts/                fonte Outfit, embutida
 icons/                ícones do app (inclui a versão "maskable" do Android)
 vendor/tesseract/     Tesseract.js 5.1.1 e o modelo de português, embutidos
 CHANGELOG.md          histórico de versões
+version.json          versão publicada (usada pelo aviso de atualização)
 ```
 
 ## Versões
@@ -79,12 +80,12 @@ O projeto segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`). As mudanças d
 
 Para publicar uma versão nova:
 
-1. Atualize `APP_VERSION` em `js/app.js` e `VERSION` em `sw.js`.
+1. Atualize `APP_VERSION` em `js/app.js`, `VERSION` em `sw.js` e o número em `version.json`.
 2. Escreva a entrada nova no `CHANGELOG.md`.
 3. Envie os arquivos alterados para a branch `main`. O GitHub Pages publica em 1 ou 2 minutos.
 4. Crie uma *release* com a tag `vX.Y.Z`.
 
-No celular, a versão nova é baixada sozinha na próxima vez que o app abrir com internet.
+No celular, o app compara a versão instalada com o `version.json` publicado. Quando há versão nova, ele avisa no Início ("A versão X está disponível · Atualizar"). Também dá para conferir em **Ajustes → Sobre o app → Buscar atualização**.
 
 ## Testar no computador
 
