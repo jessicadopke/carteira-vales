@@ -1,6 +1,6 @@
 // Guarda o app no celular para abrir sem internet.
 // Ao publicar uma versão nova, mude VERSION para o celular baixar os arquivos atualizados.
-const VERSION = "ciclo-1.5.0";
+const VERSION = "ciclo-1.6.0";
 const FILES = [
   "./",
   "index.html",
@@ -9,6 +9,7 @@ const FILES = [
   "manifest.webmanifest",
   "js/app.js",
   "js/receipt.js",
+  "js/gemini.js",
   "icons/icon-192.png",
   "icons/icon-512.png",
   "icons/maskable-512.png",

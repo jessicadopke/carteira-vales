@@ -10,6 +10,24 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
 A versão em uso aparece em **Ajustes**, no rodapé.
 
+## 1.6.0 — 20/10/2026
+
+### Novo
+- **Leitura de cupons com o Gemini (opcional):** em Ajustes → Leitura de cupons → Gemini, você cola uma chave de API do Google AI Studio e liga a função.
+  - A foto vai para o Gemini, que devolve loja, CNPJ, data, total e cada forma de pagamento. Para cada vale, vêm também o emissor, o final do cartão e o saldo impresso.
+  - Costuma acertar mais que o leitor do celular, principalmente em cupom térmico apagado.
+  - **Reserva automática:** sem internet, com a chave recusada ou com o limite de uso atingido, o app avisa e lê a foto no próprio celular, como antes.
+  - "Testar e salvar" confere a chave antes de guardar. O teste não gasta cota de leitura.
+  - A tela de conferência mostra "Lido pelo Gemini" ou "Lido no celular". Em "Ver resposta do Gemini" dá para ver exatamente o que foi lido.
+
+### Corrigido
+- Numa compra paga com vários vales, o final do cartão impresso no comprovante de um vale podia fazer o app sugerir esse cartão também para os outros. Agora cada vale usa só as pistas dele.
+
+### Privacidade
+- Com o Gemini ligado, a foto do cupom sai do celular e vai para o Google. No plano gratuito, o Google pode usar o que é enviado para melhorar os produtos dele. Ativar o faturamento no AI Studio impede esse uso.
+- A chave fica guardada só no celular, não entra no backup e é enviada ao Google no cabeçalho da requisição, nunca no endereço.
+- Com o Gemini desligado (o padrão), nada muda: tudo continua só no celular.
+
 ## 1.5.0 — 16/10/2026
 
 ### Novo
