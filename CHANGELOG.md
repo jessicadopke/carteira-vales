@@ -10,6 +10,11 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
 A versão em uso aparece em **Ajustes**, no rodapé.
 
+## 1.8.1 — 20/10/2026
+
+### Mudou
+- Os textos da configuração do Gemini falavam só em cupons, mas desde a 1.8.0 ele também lê cartões. A seção em Ajustes passa a se chamar **Leitura de fotos**, e a tela do Gemini explica que cupons e cartões (frente do cartão ou print do app do emissor) são enviados ao Google quando ele está ligado.
+
 ## 1.8.0 — 20/10/2026
 
 ### Novo

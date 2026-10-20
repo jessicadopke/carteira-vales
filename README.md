@@ -28,7 +28,7 @@ Ciclo controla o saldo dos cartões de vale-alimentação, vale-refeição e mul
 
 ## Onde ficam os dados
 
-Tudo fica **só no celular** (IndexedDB do navegador): cartões, extratos, fotos e senhas. Este site entrega apenas o programa, e nenhum dado pessoal passa por aqui. A única exceção é a leitura com o Gemini, se você ligar: aí a foto do cupom vai para o Google. Por isso:
+Tudo fica **só no celular** (IndexedDB do navegador): cartões, extratos, fotos e senhas. Este site entrega apenas o programa, e nenhum dado pessoal passa por aqui. A única exceção é a leitura com o Gemini, se você ligar: aí as fotos de cupons e cartões vão para o Google. Por isso:
 
 - **Faça backup** em **Ajustes → Fazer backup** e guarde o arquivo, por exemplo no Google Drive.
 - Para trocar de celular, restaure o backup em **Ajustes → Restaurar backup**.
@@ -37,7 +37,7 @@ Tudo fica **só no celular** (IndexedDB do navegador): cartões, extratos, fotos
 ### Leitura com o Gemini (opcional)
 
 1. Em https://aistudio.google.com/apikey, crie uma chave de API (o plano gratuito basta).
-2. No app, abra **Ajustes → Leitura de cupons → Gemini**, cole a chave, marque "Usar o Gemini" e toque em **Testar e salvar**.
+2. No app, abra **Ajustes → Leitura de fotos → Gemini**, cole a chave, marque "Usar o Gemini" e toque em **Testar e salvar**.
 3. Recomendado: no Google Cloud Console (APIs e serviços → Credenciais), restrinja a chave a **sites** com o endereço `https://jessicadopke.github.io/*`. Assim, se a chave vazar, ela não funciona em outros sites.
 
 Com o Gemini ligado, **a foto do cupom é enviada ao Google**. No plano gratuito, o Google pode usar esse conteúdo para melhorar os produtos dele; com o faturamento ativado no AI Studio, não. A chave fica só no celular e não entra no backup. Sem internet ou se o Gemini falhar, o app lê a foto no próprio celular.
@@ -68,7 +68,7 @@ manifest.webmanifest  nome, ícones e cores do app instalado
 sw.js                 service worker: guarda o app para uso offline
 js/app.js             telas, cartões, períodos, cofre, backup
 js/receipt.js         leitura do cupom no celular (OCR) e interpretação do texto
-js/gemini.js          leitura do cupom pelo Gemini (opcional)
+js/gemini.js          leitura de cupons e cartões pelo Gemini (opcional)
 fonts/                fonte Outfit, embutida
 icons/                ícones do app (inclui a versão "maskable" do Android)
 vendor/tesseract/     Tesseract.js 5.1.1 e o modelo de português, embutidos
