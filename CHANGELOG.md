@@ -10,6 +10,12 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
 A versão em uso aparece em **Ajustes**, no rodapé.
 
+## 1.6.1 — 20/10/2026
+
+### Mudou
+- **"Ler cupom" abre a câmera direto:** antes abria a galeria do celular. Agora vai para a câmera traseira, para fotografar o cupom na hora.
+- **Foto já tirada:** para ler um cupom que já está na galeria, use o link "Ler cupom de uma foto da galeria", que aparece no botão **+** e na tela do cartão. Pela galeria dá para escolher várias fotos de uma vez.
+
 ## 1.6.0 — 20/10/2026
 
 ### Novo
