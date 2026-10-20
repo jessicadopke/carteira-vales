@@ -9,6 +9,8 @@ Ciclo controla o saldo dos cartões de vale-alimentação, vale-refeição e mul
 ## O que o app faz
 
 - **Cartões de várias pessoas:** cada cartão tem titular, emissor e final. A tela inicial tem filtro por pessoa e, com muitos cartões, lista compacta com busca e grupos por titular.
+- **Cadastro por foto:** uma foto da frente do cartão ou um print do app do emissor preenche emissor, tipo, titular, final e saldo. O app guarda só os 4 últimos dígitos e não guarda a imagem.
+- **Cartão novo no cupom:** se o cupom foi pago com um cartão que não está na carteira, o app avisa e deixa cadastrar na hora, já com o saldo certo.
 - **Crédito fixo ou variável:**
   - O valor e o dia do crédito podem ser fixos ou variar.
   - Cada período vai de um crédito até o seguinte.

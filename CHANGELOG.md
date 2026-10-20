@@ -10,6 +10,20 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
 A versão em uso aparece em **Ajustes**, no rodapé.
 
+## 1.8.0 — 20/10/2026
+
+### Novo
+- **Aviso de cartão não cadastrado:** quando o cupom mostra um emissor ou final que não existe na carteira (por exemplo, "Alelo final 9999"), a conferência avisa e oferece **Cadastrar agora**.
+  - O cadastro abre ali mesmo, sem perder o cupom. Emissor, final e tipo já vêm preenchidos, e você confirma o nome e o titular.
+  - O saldo inicial é calculado para que, depois desta compra, o cartão fique com o saldo impresso no cupom.
+  - O cartão novo já fica escolhido para aquele vale.
+- **Cadastrar cartão por foto:** no cadastro de cartão, os botões **Foto do cartão** (câmera) e **Print do app do emissor** (galeria) preenchem emissor, tipo, titular, final e, no print, o saldo atual.
+  - Usa o Gemini, se estiver ligado. Senão, ou se ele falhar, usa o leitor do celular.
+  - **Privacidade:** o app guarda só os 4 últimos dígitos do cartão, nunca o número completo, e não guarda a imagem. Com o Gemini ligado, a foto vai para o Google. Fotografe só a frente do cartão, nunca o verso, onde fica o código de segurança.
+
+### Mudou
+- Quando o cupom aponta para um cartão que não está na carteira, o app deixa o vale **sem cartão escolhido**, em vez de sugerir um cartão parecido que pode estar errado. Para salvar, é preciso escolher um cartão ou cadastrar o novo.
+
 ## 1.7.0 — 20/10/2026
 
 ### Novo

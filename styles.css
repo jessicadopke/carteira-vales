@@ -252,6 +252,11 @@ body.hide-values :is(.big, .bal, .rbal, .tx .a, .stat .v, .person .v, .gmeta, .h
 .btn.ghost { background: transparent; border-color: transparent; box-shadow: none; }
 .notice .btn.ghost { color: inherit; }
 .btnrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.photofill { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: var(--r); background: var(--sunk); }
+.photofill .btn { display: inline-flex; align-items: center; gap: 6px; }
+.photofill .btn svg { width: 16px; height: 16px; color: var(--accent); }
+.newcard { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: var(--r); background: var(--accent-soft); animation: rise .25s var(--ease) both; }
+.newcard h4 { margin: 0; font-size: 15px; font-weight: 700; }
 .linkbtn { align-self: center; border: 0; background: transparent; color: var(--accent); font-weight: 600; font-size: 13.5px; padding: 6px 10px; margin-top: -6px; border-radius: 8px; text-decoration: underline; text-underline-offset: 3px; }
 .linkbtn:hover { background: var(--accent-soft); }
 .actions-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
