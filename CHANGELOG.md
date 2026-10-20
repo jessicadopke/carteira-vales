@@ -10,6 +10,20 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
 A versão em uso aparece em **Ajustes**, no rodapé.
 
+## 1.8.2 — 20/10/2026
+
+### Mudou
+- **Leitura de cupom mais rápida:**
+  - **Com o Gemini:** o app pede uma resposta direta, sem o modo de "raciocínio" do modelo, e envia uma foto menor (1600 px), suficiente para ler o cupom. A resposta chega bem mais rápido.
+  - **No celular:** a foto é lida com no máximo ~3,5 MP, em vez de até 3200 px de lado. Sem o Gemini, o leitor já começa a carregar enquanto a câmera está aberta.
+  - Se o Gemini não responder em 25 segundos, o app passa para o leitor do celular, em vez de ficar esperando.
+- **Cartão que não está na carteira:** além do final e do emissor, o app confere o **saldo impresso**. Quando ele não fecha com nenhum cartão cadastrado, a conferência avisa que pode ser um cartão novo e oferece **Cadastrar agora** ou **É o (cartão sugerido)**, em vez de só mostrar um "cartão provável".
+  - Quando o cartão sugerido vem só de pistas fracas (mesmo emissor ou loja), aparece também **Cadastrar outro cartão**.
+
+### Corrigido
+- **"O Gemini está fora do ar":** quando o modelo do Gemini está sobrecarregado ou sem cota (erros 503 e 429 do Google), o app tenta outros modelos do Gemini antes de desistir. A mensagem agora diz qual foi o erro.
+- Com um cartão errado sugerido e o saldo do cupom diferente, o app podia marcar sozinho "usar o saldo do cupom" e ajustar o saldo do cartão errado. Agora o vale fica sem cartão até você escolher.
+
 ## 1.8.1 — 20/10/2026
 
 ### Mudou
