@@ -20,7 +20,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.6.1";
+  const APP_VERSION = "1.6.2";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -622,6 +622,13 @@
 
   // ---------- leitura de cupons com o Gemini (opcional) ----------
   // A chave fica só neste celular (S.meta.gemini) e não vai para o backup.
+  // Limpa o que costuma vir junto ao copiar: espaços, quebras de linha, aspas, caracteres invisíveis,
+  // e um "NOME_DA_VARIAVEL=" na frente (ex.: GEMINI_API_KEY=...).
+  const cleanKey = raw => {
+    let k = String(raw || "").replace(/[\s ​-‍⁠﻿"'`´“”‘’]/g, "");
+    if (/^[A-Z_]+=/.test(k)) k = k.slice(k.indexOf("=") + 1);
+    return k;
+  };
   const geminiOn = () => !!(S.meta.gemini && S.meta.gemini.enabled && S.meta.gemini.key && navigator.onLine && window.GeminiReader);
   function geminiSheet() {
     const g = S.meta.gemini || {};
@@ -652,10 +659,12 @@
       });
       $("gForm").addEventListener("submit", async e => {
         e.preventDefault();
-        const key = $("gKey").value.trim(), enabled = $("gOn").checked, model = $("gModel").value.trim() || GeminiReader.DEFAULT_MODEL;
+        const key = cleanKey($("gKey").value), enabled = $("gOn").checked, model = $("gModel").value.trim() || GeminiReader.DEFAULT_MODEL;
+        $("gKey").value = key;
         $("gErr").textContent = "";
         if (enabled && !key) { $("gErr").textContent = "Cole a chave de API para ligar o Gemini."; return; }
-        if (key && !/^[\w-]{20,}$/.test(key)) { $("gErr").textContent = "Essa chave não parece válida. Copie de novo no Google AI Studio, sem espaços."; return; }
+        // Quem decide se a chave vale é o Google (no teste abaixo); aqui só barra o que claramente está incompleto.
+        if (key && key.length < 20) { $("gErr").textContent = `A chave colada parece incompleta (${key.length} caracteres). Copie de novo no Google AI Studio.`; return; }
         if (key) {
           $("gSave").disabled = true; $("gSave").textContent = "Testando…";
           try { await GeminiReader.test(key); }
