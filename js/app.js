@@ -20,7 +20,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.8.0";
+  const APP_VERSION = "1.8.1";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -576,9 +576,9 @@
         <button data-act="m-photos"><span class="t">Fotos dos cupons</span><span class="s">Espaço usado e limpeza de fotos antigas.</span></button>
         <button data-act="m-about"><span class="t">Onde ficam os dados</span><span class="s">Como não perder nada ao trocar de celular.</span></button>
       </div>
-      <div class="section-head"><h2>Leitura de cupons</h2></div>
+      <div class="section-head"><h2>Leitura de fotos</h2></div>
       <div class="menu">
-        <button data-act="m-gemini"><span class="t">Gemini</span><span class="s">${S.meta.gemini && S.meta.gemini.enabled && S.meta.gemini.key ? "Ligado: as fotos são lidas pelo Gemini, com o leitor do celular como reserva." : "Desligado: as fotos são lidas só no celular, sem internet."}</span></button>
+        <button data-act="m-gemini"><span class="t">Gemini</span><span class="s">${S.meta.gemini && S.meta.gemini.enabled && S.meta.gemini.key ? "Ligado: cupons e cartões são lidos pelo Gemini, com o leitor do celular como reserva." : "Desligado: cupons e cartões são lidos só no celular, sem internet."}</span></button>
       </div>
       <div class="section-head"><h2>Aparência</h2></div>
       <div class="menu">
@@ -628,7 +628,7 @@
     });
   }
 
-  // ---------- leitura de cupons com o Gemini (opcional) ----------
+  // ---------- leitura de fotos (cupons e cartões) com o Gemini (opcional) ----------
   // A chave fica só neste celular (S.meta.gemini) e não vai para o backup.
   // Limpa o que costuma vir junto ao copiar: espaços, quebras de linha, aspas, caracteres invisíveis,
   // e um "NOME_DA_VARIAVEL=" na frente (ex.: GEMINI_API_KEY=...).
@@ -641,10 +641,10 @@
   function geminiSheet() {
     const g = S.meta.gemini || {};
     openSheet(`
-      <h3>Leitura de cupons com o Gemini</h3>
-      <p class="hint">Com o Gemini ligado, a foto do cupom é enviada para o Google, que devolve os dados lidos. A leitura costuma acertar mais, principalmente em cupom térmico apagado. Sem internet, ou se o Gemini falhar, o app usa o leitor do próprio celular.</p>
+      <h3>Leitura de fotos com o Gemini</h3>
+      <p class="hint">Com o Gemini ligado, as fotos de cupons e de cartões (frente do cartão ou print do app do emissor) são enviadas para o Google, que devolve os dados lidos. A leitura costuma acertar mais, principalmente em cupom térmico apagado. Sem internet, ou se o Gemini falhar, o app usa o leitor do próprio celular.</p>
       <form id="gForm" class="sform" autocomplete="off">
-        <label class="check"><input type="checkbox" id="gOn" ${g.enabled ? "checked" : ""}> <span>Usar o Gemini para ler os cupons</span></label>
+        <label class="check"><input type="checkbox" id="gOn" ${g.enabled ? "checked" : ""}> <span>Usar o Gemini para ler cupons e cartões</span></label>
         <label class="field"><span>Chave de API do Google AI Studio</span><input id="gKey" type="password" autocomplete="off" spellcheck="false" placeholder="Cole aqui a chave (começa com AIza…)" value="${esc(g.key || "")}"></label>
         <label class="check"><input type="checkbox" id="gShow"> <span>Mostrar a chave</span></label>
         <details class="raw"><summary>Avançado</summary>
@@ -682,7 +682,7 @@
             return;
           }
         }
-        const ok = await run(() => Store.setMeta({ ...S.meta, gemini: { enabled, key, model } }), enabled ? "Gemini ligado. Os próximos cupons serão lidos por ele." : "Configuração salva.");
+        const ok = await run(() => Store.setMeta({ ...S.meta, gemini: { enabled, key, model } }), enabled ? "Gemini ligado. Os próximos cupons e cartões serão lidos por ele." : "Configuração salva.");
         if (ok) closeSheet(); else { $("gSave").disabled = false; $("gSave").textContent = "Testar e salvar"; }
       });
     }, { secret: true });
