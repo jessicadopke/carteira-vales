@@ -8,7 +8,8 @@
   // Quando o modelo escolhido está sobrecarregado, sem cota ou não existe, tenta estes, nesta ordem.
   // Cada modelo tem a sua própria cota e capacidade no Google.
   const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-flash-lite-latest"];
-  const TIMEOUT_MS = 25000; // tempo máximo de cada tentativa; depois disso o app usa o leitor do celular
+  // Tempo máximo de espera pelo Gemini, somando todas as tentativas. Depois disso o app usa o leitor do celular.
+  const BUDGET_MS = 30000;
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
 
   // Formato da resposta pedido ao Gemini (subconjunto do OpenAPI aceito pela API)
@@ -50,11 +51,11 @@ Extraia os dados no formato pedido. Regras:
 - "final_cartao": só os 4 últimos dígitos, se legíveis.
 - "categoria": a que melhor descreve a loja.`;
 
-  async function call(key, model, body, signal) {
-    // Prazo por tentativa, sem perder o "cancelar" de quem chamou.
+  async function call(key, model, body, signal, ms) {
+    // Prazo da tentativa, sem perder o "cancelar" de quem chamou.
     const ctl = new AbortController();
     let timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, TIMEOUT_MS);
+    const timer = setTimeout(() => { timedOut = true; ctl.abort(); }, ms);
     const stop = () => ctl.abort();
     if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener("abort", stop, { once: true }); }
     try {
@@ -86,41 +87,54 @@ Extraia os dados no formato pedido. Regras:
   const noThinking = new Set(); // modelos que recusaram a configuração de raciocínio
   const thinkingFor = model => /gemini-2\.5-flash/.test(model) ? { thinkingBudget: 0 } : /gemini-[12]\./.test(model) ? null : { thinkingLevel: "low" };
 
-  // Tenta o modelo escolhido e, se ele falhar por sobrecarga, cota ou modelo inexistente, os de reserva.
+  // Tenta o modelo escolhido e, se ele falhar por sobrecarga, cota ou modelo inexistente, os de reserva,
+  // sem passar de BUDGET_MS no total. Cada tentativa fica registrada (modelo, resultado, tempo) para a tela de conferência.
   async function generate(cfg, parts, schema, signal) {
     const first = cfg.model || DEFAULT_MODEL;
     const models = [first, ...FALLBACK_MODELS.filter(m => m !== first)];
+    const deadline = Date.now() + BUDGET_MS;
+    const attempts = [];
+    const fail = e => { e.attempts = attempts; return e; };
     let lastErr = null;
     for (const model of models) {
+      const left = deadline - Date.now();
+      if (left < 3000) break;
+      const t0 = Date.now();
       const generationConfig = { temperature: 0, responseMimeType: "application/json", responseSchema: schema };
       const th = !noThinking.has(model) && thinkingFor(model);
       if (th) generationConfig.thinkingConfig = th;
       const body = { contents: [{ role: "user", parts }], generationConfig };
       try {
         let out;
-        try { out = await call(cfg.key, model, body, signal); }
+        try { out = await call(cfg.key, model, body, signal, left); }
         catch (e) {
           // modelo que não aceita a configuração de raciocínio: repete sem ela
           if (e.status === 400 && th && /think/i.test(e.message)) {
             noThinking.add(model);
             delete generationConfig.thinkingConfig;
-            out = await call(cfg.key, model, body, signal);
+            out = await call(cfg.key, model, body, signal, Math.max(1000, deadline - Date.now()));
           } else throw e;
         }
         const text = (((out.candidates || [])[0] || {}).content || {}).parts?.map(p => p.thought ? "" : p.text || "").join("") || "";
         let json;
         try { json = JSON.parse(text); } catch (e) { const err = new Error("resposta fora do formato"); err.status = 0; err.raw = text; throw err; }
-        return { json, model };
+        attempts.push({ model, ok: true, ms: Date.now() - t0 });
+        return { json, model, attempts };
       } catch (e) {
         lastErr = e;
+        attempts.push({ model, ok: false, status: e.name === "TimeoutError" ? "tempo esgotado" : e.status || e.name || "erro", msg: String(e.message || "").slice(0, 160), ms: Date.now() - t0 });
+        console.warn("gemini", model, e.status, e.message);
         // Outro modelo só ajuda quando o problema é deste: inexistente, sem cota ou sobrecarregado.
+        // Tempo esgotado, chave recusada, foto recusada: não adianta insistir.
         const st = e.status;
-        if (!(st === 404 || st === 429 || st >= 500)) throw e;
-        console.warn("gemini", model, st, e.message);
+        if (e.name === "TimeoutError" || !(st === 404 || st === 429 || st >= 500)) throw fail(e);
       }
     }
-    throw lastErr;
+    throw fail(lastErr || Object.assign(new Error("tempo esgotado"), { name: "TimeoutError", status: 0 }));
   }
+
+  // "gemini-flash-latest: 503 (2,1 s) · gemini-2.5-flash: ok (6,4 s)"
+  const describe = attempts => (attempts || []).map(a => `${a.model}: ${a.ok ? "ok" : a.status} (${(a.ms / 1000).toFixed(1).replace(".", ",")} s)`).join(" · ");
 
   // Explica o erro em português, para a tela de conferência e para o teste da chave.
   function explain(e) {
@@ -196,8 +210,8 @@ Extraia os dados no formato pedido. Regras:
   // Lê o cupom. cfg = { key, model }. Devolve { parsed, raw, model }.
   async function read(blob, cfg, signal) {
     const data = await toB64(blob);
-    const { json, model } = await generate(cfg, [{ text: PROMPT }, { inline_data: { mime_type: blob.type || "image/jpeg", data } }], SCHEMA, signal);
-    return { parsed: toParsed(json), raw: JSON.stringify(json, null, 2), model };
+    const { json, model, attempts } = await generate(cfg, [{ text: PROMPT }, { inline_data: { mime_type: blob.type || "image/jpeg", data } }], SCHEMA, signal);
+    return { parsed: toParsed(json), raw: JSON.stringify(json, null, 2), model, attempts };
   }
 
   // ---------- cadastro de cartão por foto ----------
@@ -245,5 +259,5 @@ Extraia os dados no formato pedido. Regras:
     return true;
   }
 
-  window.GeminiReader = { read, readCard, test, toParsed, explain, DEFAULT_MODEL };
+  window.GeminiReader = { read, readCard, test, toParsed, explain, describe, DEFAULT_MODEL };
 })();

@@ -20,7 +20,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.8.2";
+  const APP_VERSION = "1.8.3";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -1549,7 +1549,11 @@
     $("scanStop").addEventListener("click", async () => { alive = false; ctl && ctl.abort(); reviewForm(sheet, await stored, presetCardId, null, "Preencha os dados do cupom.", ""); });
 
     // 1º: Gemini, se estiver ligado, com chave e com internet. Se falhar, segue para o leitor do celular.
-    let geminiFail = null;
+    // "Como foi lido" (modelos tentados, erros e tempos) aparece na conferência, para entender demora ou falha.
+    const t0 = Date.now();
+    const secs = () => ((Date.now() - t0) / 1000).toFixed(1).replace(".", ",") + " s";
+    let geminiFail = null, geminiLog = "";
+    if (!geminiOn()) geminiLog = !(S.meta.gemini && S.meta.gemini.key) ? "Gemini: sem chave salva." : !(S.meta.gemini && S.meta.gemini.enabled) ? "Gemini: desligado em Ajustes." : !navigator.onLine ? "Gemini: sem internet." : "";
     if (geminiOn()) {
       $("scanStatus").textContent = "Lendo com o Gemini…";
       $("scanBar").parentElement.hidden = true;
@@ -1559,6 +1563,7 @@
         const g = await GeminiReader.read(img, { key: S.meta.gemini.key, model: S.meta.gemini.model }, ctl && ctl.signal);
         if (!alive || !$("scanBody")) return;
         const p = g.parsed;
+        p.how = `Gemini: ${GeminiReader.describe(g.attempts)}. Total: ${secs()}.`;
         const msg = !p.legible ? "O Gemini achou que a foto não é um comprovante ou está ilegível. Confira os dados." : !p.found.length ? "O Gemini não encontrou valores nesta foto. Confira ou preencha à mão." : null;
         reviewForm(sheet, await stored, presetCardId, p, msg, g.raw);
         return;
@@ -1566,6 +1571,7 @@
         if (!alive || !$("scanBody")) return;
         console.warn("gemini", e);
         geminiFail = GeminiReader.explain(e);
+        geminiLog = `Gemini: ${GeminiReader.describe(e.attempts) || e.message}.`;
         $("scanBar").parentElement.hidden = false;
       }
     }
@@ -1580,6 +1586,7 @@
       });
       if (!alive || !$("scanBody")) return;
       const parsed = ReceiptReader.parse(text);
+      parsed.how = `${geminiLog ? geminiLog + " " : ""}Leitor do celular. Total: ${secs()}.`;
       const empty = !parsed.found.length;
       const prefix = geminiFail ? `Gemini: ${geminiFail} A foto foi lida pelo leitor do celular. ` : "";
       reviewForm(sheet, await stored, presetCardId, parsed, empty ? prefix + "Não encontrei valores nesta foto. Confira se o cupom está inteiro, reto e bem iluminado, ou preencha à mão." : (prefix ? prefix + "Confira os valores com atenção." : null), text);
@@ -1845,6 +1852,7 @@
           <label class="field"><span>Saldo do vale impresso no cupom (se houver)</span><input id="rSaldo" class="num" inputmode="decimal" placeholder="não informado" value="${saldos.length === 1 && saldos[0] >= 0 ? fmtInput(saldos[0]) : ""}"></label>
           <label class="check" id="rUseWrap"><input type="checkbox" id="rUse"> <span id="rUseTxt"></span></label>
         </div>
+        ${d.how ? `<details class="raw"><summary>Como foi lido</summary><p class="hint num" style="margin-top:8px">${esc(d.how)}</p></details>` : ""}
         ${rawText ? `<details class="raw"><summary>${d.source === "gemini" ? "Ver resposta do Gemini" : "Ver texto lido da foto"}</summary><pre></pre></details>` : ""}
         <div class="err" id="rErr"></div>
         <div class="btnrow">
