@@ -69,6 +69,9 @@ sw.js                 service worker: guarda o app para uso offline
 js/app.js             telas, cartões, períodos, cofre, backup
 js/receipt.js         leitura do cupom no celular (OCR) e interpretação do texto
 js/gemini.js          leitura de cupons e cartões pelo Gemini (opcional)
+js/issuers.js         emissores de cartão (nome, cor, sigla e como reconhecer): um emissor novo entra só aqui
+js/match.js           qual cartão pagou o cupom e aviso de cartão que não está na carteira
+tests/                testes automáticos da leitura de cupons e da escolha do cartão
 fonts/                fonte Outfit, embutida
 icons/                ícones do app (inclui a versão "maskable" do Android)
 vendor/tesseract/     Tesseract.js 5.1.1 e o modelo de português, embutidos
@@ -82,12 +85,33 @@ O projeto segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`). As mudanças d
 
 Para publicar uma versão nova:
 
-1. Atualize `APP_VERSION` em `js/app.js`, `VERSION` em `sw.js` e o número em `version.json`.
+1. Atualize `APP_VERSION` em `js/app.js`, `VERSION` em `sw.js` e o número em `version.json`. Arquivo novo em `js/` também entra na lista `FILES` do `sw.js`.
 2. Escreva a entrada nova no `CHANGELOG.md`.
-3. Envie os arquivos alterados para a branch `main`. O GitHub Pages publica em 1 ou 2 minutos.
-4. Crie uma *release* com a tag `vX.Y.Z`.
+3. Rode os testes (`node --test`, veja abaixo). Todos precisam passar.
+4. Faça o commit e envie com a tag da versão:
+
+   ```
+   git commit -am "X.Y.Z: resumo"
+   git tag vX.Y.Z
+   git push origin main vX.Y.Z
+   ```
+
+   O GitHub Pages publica em 1 ou 2 minutos.
+5. Crie a *release* no GitHub a partir da tag `vX.Y.Z`, com as notas do CHANGELOG.
+
+O login do GitHub no terminal é feito uma vez no computador (o Windows guarda a credencial).
 
 No celular, o app compara a versão instalada com o `version.json` publicado. Quando há versão nova, ele avisa no Início ("A versão X está disponível · Atualizar"). Também dá para conferir em **Ajustes → Sobre o app → Buscar atualização**.
+
+## Testes automáticos
+
+Com o Node.js 18 ou mais novo, nesta pasta:
+
+```
+node --test
+```
+
+Os testes ficam em `tests/` e não precisam de instalação. Eles cobrem a leitura de cupons pelo leitor do celular (`tests/cupons/`, textos de cupons reais anonimizados), a conversão das respostas do Gemini (`tests/gemini/`, respostas salvas, sem chamar o Google) e a escolha do cartão. Quando um defeito de leitura for corrigido, acrescente o cupom ou a resposta que o mostrou.
 
 ## Testar no computador
 

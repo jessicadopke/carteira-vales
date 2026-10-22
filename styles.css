@@ -311,9 +311,15 @@ body.hide-values :is(.big, .bal, .rbal, .tx .a, .stat .v, .person .v, .gmeta, .h
 .tx .a.in { color: var(--good); }
 .tx .a .rb { display: block; font-size: 11.5px; font-weight: 500; color: var(--muted); }
 .tx .acts { display: flex; gap: 2px; }
-.tx .mini { border: 0; background: transparent; color: var(--faint); padding: 6px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+.tx .mini { border: 0; background: transparent; color: var(--muted); padding: 6px; border-radius: 8px; font-size: 12px; font-weight: 700; min-width: 32px; min-height: 32px; }
 .tx .mini:hover { background: var(--sunk); color: var(--fg); }
 .tx .mini.x { font-size: 20px; line-height: 1; }
+@media (max-width: 480px) {
+  .tx { gap: 10px; }
+  .tx .acts { flex-direction: column; align-items: center; }
+  .tx .a .rb { white-space: nowrap; }
+  .tx .d .t { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.25; }
+}
 .tots { display: flex; gap: 8px; }
 .tot { flex: 1; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; display: flex; flex-direction: column; box-shadow: var(--shadow-sm); }
 .tot .k { font-size: 12px; color: var(--muted); }
@@ -335,7 +341,7 @@ body.hide-values :is(.big, .bal, .rbal, .tx .a, .stat .v, .person .v, .gmeta, .h
   border-top: 1px solid var(--line);
 }
 .tabbar-in { max-width: 720px; margin: 0 auto; height: var(--bar-h); display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; padding: 0 max(6px, env(safe-area-inset-left, 0px)) 0 max(6px, env(safe-area-inset-right, 0px)); }
-.tab { border: 0; background: transparent; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; color: var(--faint); padding: 6px 0; position: relative; transition: color .2s var(--ease); }
+.tab { border: 0; background: transparent; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; font-weight: 700; color: var(--muted); padding: 6px 0; position: relative; transition: color .2s var(--ease); }
 .tab svg { width: 24px; height: 24px; transition: transform .25s var(--spring); }
 .tab[aria-current="page"] { color: var(--accent); }
 .tab[aria-current="page"] svg { transform: translateY(-1px) scale(1.06); }
@@ -383,6 +389,10 @@ body.hide-values :is(.big, .bal, .rbal, .tx .a, .stat .v, .person .v, .gmeta, .h
 .check { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; }
 .check input { margin-top: 2px; width: 20px; height: 20px; flex: none; accent-color: var(--accent); }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+/* rótulo que quebra em duas linhas não desalinha as caixas lado a lado */
+.grid2 > .field { justify-content: flex-end; }
+/* tela muito estreita ou fonte do Android aumentada: um campo por linha */
+@media (max-width: 359px) { .grid2 { grid-template-columns: 1fr; } }
 .seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--sunk); border-radius: 12px; padding: 4px; }
 .seg button { border: 0; background: transparent; padding: 9px; border-radius: 9px; font-weight: 700; color: var(--muted); transition: background-color .2s var(--ease), color .2s, box-shadow .2s; }
 .seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: var(--shadow-sm); }
@@ -426,7 +436,7 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; background: va
 .split-main { min-width: 0; }
 .split-side { display: flex; gap: 4px; align-items: center; }
 .split-side .amt { text-align: right; padding: 9px 10px; }
-.split-side .mini { border: 0; background: transparent; color: var(--faint); font-size: 20px; padding: 4px 6px; border-radius: 8px; }
+.split-side .mini { border: 0; background: transparent; color: var(--muted); font-size: 20px; padding: 4px 6px; border-radius: 8px; min-width: 32px; min-height: 32px; }
 .split-after { grid-column: 1 / -1; }
 .split-status { font-size: 13.5px; font-weight: 700; color: var(--good); }
 .split-status.bad { color: var(--bad); }
@@ -451,7 +461,7 @@ details.raw pre { white-space: pre-wrap; overflow-wrap: anywhere; background: va
 .menu button:disabled { opacity: .5; }
 .menu button[aria-pressed="true"] { background: var(--accent-soft); }
 .menu button[aria-pressed="true"] .t { color: var(--accent); }
-.foot { text-align: center; color: var(--faint); font-size: 12px; }
+.foot { text-align: center; color: var(--muted); font-size: 12px; }
 
 /* ---------- toast ---------- */
 .toast {

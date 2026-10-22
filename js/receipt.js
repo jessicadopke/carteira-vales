@@ -106,25 +106,12 @@
     return out;
   }
 
-  const ISSUER_RULES = [
-    [/\bALELO\b/, "Alelo"],
-    [/\bPLUXEE\b|\bSODEXO\b/, "Pluxee (Sodexo)"],
-    [/\bTICKET\b/, "Ticket"],
-    [/\bVR\b|\bVR ?BENEF|\bVR ?REFEI|\bVR ?ALIMENT/, "VR"],
-    [/\bFLASH\b/, "Flash"],
-    [/\bCAJU\b/, "Caju"],
-    [/\bIFOOD ?BENEF|\bIFOOD ?(?:CARD|REFEI|ALIMENT)/, "iFood Benefícios"],
-    [/\bSWILE\b/, "Swile"],
-    [/\bBEN ?(?:VISA|BENEF)/, "Ben"],
-    [/\bVOLUS\b/, "Volus"],
-    [/\bVALE ?CARD\b/, "Valecard"],
-    [/\bUP ?BRASIL\b|\bPOLICARD\b/, "Up Brasil"],
-    [/\bVERO ?CARD\b/, "Verocard"],
-    [/\bGREEN ?CARD\b/, "Greencard"],
-    [/\bNUTRICASH\b/, "Nutricash"],
-    [/\bGOOD ?CARD\b/, "GoodCard"],
-  ];
-  const BENEFIT_WORDS = /VALE ?ALIMENT|VALE ?REFEI|VOUCHER|\bALIMENTACAO\b|\bREFEICAO\b|\bBENEFICIO|ALELO|PLUXEE|SODEXO|TICKET|\bVR\b|FLASH|CAJU|SWILE|\bVA\b|\bVR\b|\bVOUCH|VOLUS|VALE ?CARD|UP ?BRASIL|POLICARD|VERO ?CARD|GREEN ?CARD|NUTRICASH|GOOD ?CARD/;
+  // Linhas que falam de cartão de benefício (os emissores vêm de issuers.js)
+  const BENEFIT_WORDS = new RegExp(String.raw`VALE ?ALIMENT|VALE ?REFEI|VOUCHER|\bALIMENTACAO\b|\bREFEICAO\b|\bBENEFICIO|\bVA\b|\bVOUCH|` + Issuers.ANY_PRINT.source);
+  // Final do cartão: 4 dígitos depois da máscara (************4321, **** **** **** 4321, XXXX4321).
+  // O OCR costuma ler o * como x, + ou #.
+  const MASK_L4 = String.raw`(?<![A-Z0-9])(?:[*X+#•]{2,}[\s.-]*)+(\d{4})\b`;
+  const FINAL_L4 = String.raw`\bFINAL\s*:?\s*(\d{4})\b`;
   const CAT_RULES = [
     [/SUPERMERC|MERCADO|ATACAD|ASSAI|CARREFOUR|HIPER|MERCEARIA|HORTIFRUTI|EMPORIO/, "Mercado"],
     [/PADARIA|PANIFIC|CONFEITAR/, "Padaria"],
@@ -197,7 +184,7 @@
     // Todas as formas de pagamento da NFC-e (pode haver vários vales, cartão, Pix e dinheiro na mesma compra).
     // Com o cabeçalho "FORMA DE PAGAMENTO", lê só as linhas logo abaixo dele; sem ele, procura no cupom todo.
     const PAY_RULES = [
-      [/VALE ?ALIMENT|VALE ?REFEI|VOUCHER|\bALIMENTACAO\b|\bREFEICAO\b|BENEFICIO|ALELO|PLUXEE|SODEXO|TICKET|\bVR\b|FLASH|CAJU|SWILE|\bVA\b|VOLUS|VALE ?CARD|UP ?BRASIL|POLICARD|VERO ?CARD|GREEN ?CARD|NUTRICASH|GOOD ?CARD/, "vale"],
+      [BENEFIT_WORDS, "vale"],
       [/\bPIX\b/, "pix"],
       [/DINHEIRO|ESPECIE/, "dinheiro"],
       [/CREDITO/, "credito"],
@@ -215,6 +202,10 @@
       if (!rule) { if (head >= 0 && /[A-Z]{3}/.test(l)) payments.push({ kind: "outro", amount: v[v.length - 1], label: raw[lines.indexOf(l)] }); continue; }
       payments.push({ kind: rule[1], amount: v[v.length - 1], label: raw[lines.indexOf(l)] });
     }
+    // "CARTAO TEF" / "OUTROS" na NFC-e é o vale quando o cupom traz o comprovante de um cartão de benefício
+    // e nenhuma outra linha de pagamento já é de vale.
+    if (!payments.some(p => p.kind === "vale") && lines.some(l => BENEFIT_WORDS.test(l)))
+      for (const p of payments) if (p.kind === "outro" && /CART|TEF|OUTROS/.test(norm(p.label || ""))) p.kind = "vale";
     // Sem a seção da NFC-e, mantém só um pagamento por tipo para não contar duas vezes o mesmo valor do comprovante.
     res.payments = head >= 0 ? payments : payments.filter((p, i) => payments.findIndex(q => q.kind === p.kind && q.amount === p.amount) === i);
     const vales = res.payments.filter(p => p.kind === "vale");
@@ -227,17 +218,19 @@
     // CNPJ da loja (o primeiro do cupom é o do emitente): serve para lembrar qual cartão é usado em cada loja
     const cn = all.match(/CNPJ[^\d\n]{0,8}(\d{2}\.?\d{3}\.?\d{3}\s?\/?\s?\d{4}\s?-?\s?\d{2})/);
     if (cn) { const digits = cn[1].replace(/\D/g, ""); if (digits.length === 14) res.cnpj = digits; }
-    for (const [re, name] of ISSUER_RULES) if (re.test(all)) { res.issuer = name; break; }
+    res.issuer = Issuers.fromPrint(all);
     // Tipo do cartão, quando o comprovante diz (ex.: "ALELO REFEICAO", "VR ALIMENTACAO"),
     // só nas linhas do cartão, para não pegar o nome da loja
     const cardLines = lines.filter(l => BENEFIT_WORDS.test(l)).join("\n");
-    res.type = /MULTI ?BENEF|\bFLEX\b/.test(cardLines) ? "flex" : /REFEI/.test(cardLines) ? "refeicao" : /ALIMENTA/.test(cardLines) ? "alimentacao" : null;
+    // Com cartões de tipos diferentes no mesmo cupom, o tipo fica em aberto.
+    const types = [/MULTI ?BENEF|\bFLEX\b/.test(cardLines) && "flex", /REFEI/.test(cardLines) && "refeicao", /ALIMENTA/.test(cardLines) && "alimentacao"].filter(Boolean);
+    res.type = types.length === 1 ? types[0] : null;
     // Titular, quando o comprovante imprime (PORTADOR / TITULAR / NOME DO PORTADOR)
     const hm = all.match(/\b(?:NOME DO PORTADOR|PORTADOR|TITULAR)\s*:?\s*([A-Z][A-Z .']{2,40})$/m);
     if (hm && !/CONSUMIDOR|OPERADOR|CAIXA/.test(hm[1])) res.holder = hm[1].trim().toLowerCase().replace(/(^|\s)\p{L}/gu, m => m.toUpperCase()).replace(/\b(De|Da|Do|Dos|Das|E)\b/g, m => m.toLowerCase());
-    const l4 = all.match(/(?:[*X]{4}[\s.-]*){1,3}(\d{4})\b|\*{2,}\s*(\d{4})\b|FINAL\s*:?\s*(\d{4})\b|CARTAO\s*:?\s*[*X\d\s]{6,}?(\d{4})\b/);
-    if (l4) res.last4 = l4[1] || l4[2] || l4[3] || l4[4];
-    res.last4s = [...all.matchAll(/(?:[*X]{4}[\s.-]*){1,3}(\d{4})\b|\*{2,}\s*(\d{4})\b|FINAL\s*:?\s*(\d{4})\b/g)].map(m => m[1] || m[2] || m[3]);
+    const l4 = all.match(new RegExp(`${MASK_L4}|${FINAL_L4}|CARTAO\\s*:?\\s*[*X+#•\\d\\s]{6,}?(\\d{4})\\b`));
+    if (l4) res.last4 = l4[1] || l4[2] || l4[3];
+    res.last4s = [...all.matchAll(new RegExp(`${MASK_L4}|${FINAL_L4}`, "g"))].map(m => m[1] || m[2]);
 
     // Estabelecimento: primeira linha de cabeçalho com nome
     for (let i = 0; i < Math.min(lines.length, 8); i++) {
@@ -261,20 +254,20 @@
 
   // ---------- cadastro de cartão por foto (leitor do celular) ----------
   // Foto do cartão ou print do app do emissor. Guarda só os 4 últimos dígitos do número.
-  const CARD_WORDS = /ALELO|PLUXEE|SODEXO|TICKET|FLASH|CAJU|SWILE|IFOOD|VOLUS|VALE ?CARD|UP ?BRASIL|POLICARD|VERO ?CARD|GREEN ?CARD|NUTRICASH|GOOD ?CARD|BENEF|VALE|REFEI|ALIMENT|VOUCHER|CARTAO|VALIDADE|VALID|THRU|SALDO|MASTERCARD|VISA|ELO|DEBITO|CREDITO|DISPON|EXTRATO|APP/;
+  const CARD_WORDS = new RegExp(Issuers.ANY_PRINT.source + "|IFOOD|BENEF|VALE|REFEI|ALIMENT|VOUCHER|CARTAO|VALIDADE|VALID|THRU|SALDO|MASTERCARD|VISA|ELO|DEBITO|CREDITO|DISPON|EXTRATO|APP");
   function parseCard(text) {
     const raw = String(text || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const lines = raw.map(norm);
     const all = lines.join("\n");
     const res = { source: "celular", kind: /SALDO|DISPON|EXTRATO/.test(all) ? "app" : "cartao", issuer: null, type: null, holder: null, last4: null, balance: null };
-    for (const [re, name] of ISSUER_RULES) if (re.test(all)) { res.issuer = name; break; }
+    res.issuer = Issuers.fromPrint(all);
     if (/MULTI|FLEX|BENEFICIO/.test(all)) res.type = "flex";
     else if (/REFEI|RESTAURANTE/.test(all)) res.type = "refeicao";
     else if (/ALIMENT|MERCADO/.test(all)) res.type = "alimentacao";
     // número do cartão: 13 a 19 dígitos (com espaços) ou mascarado (**** 1234) → só o final
     const digits = all.replace(/[ .-](?=\d)/g, "");
     const full = digits.match(/\d{13,19}/);
-    const masked = all.match(/(?:[*X•]{2,}[\s.-]*){1,3}(\d{4})\b|FINAL\s*:?\s*(\d{4})\b/);
+    const masked = all.match(new RegExp(`${MASK_L4}|${FINAL_L4}`));
     if (masked) res.last4 = masked[1] || masked[2];
     else if (full) res.last4 = full[0].slice(-4);
     // saldo (print do app)

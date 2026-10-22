@@ -1,0 +1,8 @@
+{
+  "legivel": true,
+  "pagamentos": [
+    { "forma": "vale", "valor": 317.07, "emissor": "Volus", "cartao_impresso": "608812******4821", "final_cartao": "6088",
+      "saldo": 1208.40, "saldo_momento": "apos_compra", "texto_cartao": "VOLUS ALIMENTACAO", "tipo_cartao": "alimentacao", "titular": "FULANA DE TAL" }
+  ],
+  "categoria": "Mercado", "cnpj": "06057223053968", "data": "2026-10-21", "estabelecimento": "ASSAI ATACADISTA PALMAS II", "observacoes": null, "valor_total": 317.07
+}

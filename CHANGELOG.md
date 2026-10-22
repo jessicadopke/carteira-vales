@@ -10,6 +10,30 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
 A versão em uso aparece em **Ajustes**, no rodapé.
 
+## 1.10.0 — 22/10/2026
+
+### Novo
+- **Andamento da leitura com o Gemini:** a tela mostra o modelo que está lendo e o tempo decorrido. Quando um modelo falha ou demora, ela avisa a troca (por exemplo, "gemini-flash-latest: sobrecarregado. Tentando gemini-flash-lite-latest…").
+- **Modelo do Gemini por lista:** em Ajustes → Gemini → Avançado, o modelo é escolhido numa lista dos modelos que a sua chave pode usar, buscada no Google. A mesma tela mostra qual modelo fez a última leitura e quantas leituras e erros de cota (429) houve nos últimos 30 dias, neste celular.
+- **Lembrete de backup:** além de avisar quando o último backup tem mais de 30 dias, o Início avisa quando há 30 lançamentos novos desde ele.
+
+### Mudou
+- **Telas estreitas e fonte grande:** no cadastro de cartão e nos outros formulários em duas colunas, as caixas lado a lado ficam alinhadas mesmo quando um rótulo quebra em duas linhas. Em telas com menos de 360 px, cada campo ocupa uma linha. O rótulo "Saldo depois desta compra" virou "Saldo após a compra".
+- **Extrato em tela estreita:** o nome da loja pode ocupar duas linhas, e os botões "foto" e "×" ficam um sobre o outro. O saldo impresso aparece como "saldo R$ …".
+- **Acessibilidade:** os rótulos das abas, o rodapé e os botões "foto" e "×" passaram a ter contraste suficiente para leitura (eram cinza-claro), e os botões pequenos ganharam área de toque mínima de 32 px.
+
+### Corrigido
+- **Final do cartão errado na leitura com o Gemini:** num comprovante com o número mascarado (por exemplo `637707******4403`), o Gemini podia devolver os 4 **primeiros** dígitos (`6377`, que identificam a rede do cartão) como se fossem o final. Agora o Gemini copia o número como está impresso, e o app tira o final dos dígitos que vêm depois da máscara. Um "final" igual ao começo do número é descartado.
+- **Final do cartão no leitor do celular:** reconhece `************4321`, `**** **** **** 4321`, `XXXX4321` e `FINAL 4321`, mesmo quando o leitor troca o `*` por `x`, `+` ou `#`.
+- **Leitor do celular:** a forma de pagamento "CARTAO TEF" da NFC-e passa a contar como vale quando o cupom traz o comprovante de um cartão de benefício. Antes ela aparecia como "outra forma".
+- **Leitor do celular:** com cartões de tipos diferentes no mesmo cupom (alimentação e refeição), o tipo do cartão novo fica em aberto, em vez de vir errado para um deles.
+
+### Por dentro
+- Os emissores de cartão (nome, cor, sigla e como reconhecer cada um) ficam num arquivo só, `js/issuers.js`. Um emissor novo entra só ali.
+- A escolha do cartão pelo cupom e o aviso de cartão novo saíram da tela de conferência para `js/match.js`, como funções que podem ser testadas.
+- **Testes automáticos** em `tests/`, rodados com `node --test`: cupons reais anonimizados, respostas salvas do Gemini e escolha do cartão, incluindo os defeitos já corrigidos.
+- O código passou a ser publicado por `git push`, com tag e release a cada versão.
+
 ## 1.9.0 — 22/10/2026
 
 ### Novo

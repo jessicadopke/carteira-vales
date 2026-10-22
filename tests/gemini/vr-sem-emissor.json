@@ -1,0 +1,8 @@
+{
+  "legivel": true,
+  "pagamentos": [
+    { "forma": "vale", "valor": 15.99, "emissor": null, "final_cartao": "7310", "saldo": 412.30, "saldo_momento": "apos_compra",
+      "texto_cartao": "VR BENEFICIOS VOUCHER A VISTA", "tipo_cartao": "desconhecido", "titular": "CONSUMIDOR NAO IDENTIFICADO" }
+  ],
+  "categoria": "Mercado", "cnpj": "16593945000102", "data": "2026-10-20", "estabelecimento": "COMERCIAL SUPER BIG", "valor_total": 15.99
+}

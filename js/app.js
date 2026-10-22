@@ -7,22 +7,16 @@
     flex: { label: "Multibenefício", color: "var(--t-flex)" },
     outro: { label: "Outro voucher", color: "var(--t-outro)" },
   };
-  const ISSUERS = ["VR", "Alelo", "Pluxee (Sodexo)", "Ticket", "Flash", "Caju", "iFood Benefícios", "Swile", "Ben", "Volus", "Valecard", "Up Brasil", "Verocard", "Greencard", "Nutricash", "GoodCard", "Outro"];
-  // Cor e sigla de cada emissor (só para reconhecer o cartão de relance; não são logotipos)
-  const ISSUER_STYLE = {
-    "VR": { c: "#0a8f3c", s: "VR" }, "Alelo": { c: "#5b8f00", s: "AL" }, "Pluxee (Sodexo)": { c: "#2b2a8c", s: "PX" },
-    "Ticket": { c: "#c8102e", s: "TK" }, "Flash": { c: "#d6246e", s: "FL" }, "Caju": { c: "#e4572e", s: "CJ" },
-    "iFood Benefícios": { c: "#b8121f", s: "IF" }, "Swile": { c: "#5b3fd1", s: "SW" }, "Ben": { c: "#0f6fa8", s: "BN" },
-    "Volus": { c: "#00796b", s: "VL" }, "Valecard": { c: "#e0600b", s: "VC" }, "Up Brasil": { c: "#c2410c", s: "UP" }, "Verocard": { c: "#1d4ed8", s: "VE" },
-    "Greencard": { c: "#15803d", s: "GC" }, "Nutricash": { c: "#a16207", s: "NC" }, "GoodCard": { c: "#7c3aed", s: "GD" }, "Outro": { c: "#55657a", s: "••" },
-  };
+  // Emissores (nome, cor e sigla) vêm de issuers.js
+  const ISSUERS = Issuers.NAMES;
+  const ISSUER_STYLE = Issuers.STYLE;
   const issuerStyle = c => ISSUER_STYLE[c.issuer] || ISSUER_STYLE.Outro;
   const fold = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   const MANY = 12; // a partir daqui os grupos por titular começam fechados
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.9.0";
+  const APP_VERSION = "1.10.0";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -480,8 +474,11 @@
         <button class="person" data-act="person" data-all="1" aria-pressed="${S.person === null}"><span class="n">Todos</span><span class="v num">${brl(S.cards.reduce((s, c) => s + (c.balance || 0), 0))}</span></button>
         ${people.map(h => `<button class="person" data-act="person" data-p="${esc(h)}" aria-pressed="${S.person === h}"><span class="n">${esc(h || "Sem titular")}</span><span class="v num">${brl(sumOf(h))}</span></button>`).join("")}
       </div>` : "";
-    const backupWarn = S.txs.length >= 10 && (!S.meta.lastBackup || Date.now() - S.meta.lastBackup > 30 * 86400000)
-      ? `<div class="notice info"><span>${S.meta.lastBackup ? "Seu último backup tem mais de 30 dias." : "Você ainda não fez backup."} Se o celular for perdido ou formatado, os dados vão junto.</span><span class="actions"><button class="btn small primary" data-act="backup">Fazer backup</button></span></div>` : "";
+    // Lembrete de backup: sem backup, backup com mais de 30 dias ou 30 lançamentos novos desde o último
+    const newSinceBackup = S.meta.lastBackup ? S.txs.filter(t => (t.createdAt || 0) > S.meta.lastBackup).length : S.txs.length;
+    const backupOld = S.txs.length >= 10 && (!S.meta.lastBackup || Date.now() - S.meta.lastBackup > 30 * 86400000);
+    const backupWarn = backupOld || (S.meta.lastBackup && newSinceBackup >= 30)
+      ? `<div class="notice info"><span>${!S.meta.lastBackup ? "Você ainda não fez backup." : backupOld ? "Seu último backup tem mais de 30 dias." : `Há ${newSinceBackup} lançamentos novos desde o último backup.`} Se o celular for perdido ou formatado, os dados vão junto.</span><span class="actions"><button class="btn small primary" data-act="backup">Fazer backup</button></span></div>` : "";
     const credited = S.txs.filter(t => ids.has(t.cardId) && isBenefitCredit(t) && (t.date || "").startsWith(mk)).reduce((s, t) => s + t.amount, 0);
     return `
       <section class="hero">
@@ -640,6 +637,17 @@
     return k;
   };
   const geminiOn = () => !!(S.meta.gemini && S.meta.gemini.enabled && S.meta.gemini.key && navigator.onLine && window.GeminiReader);
+  // Opções da lista de modelos: o padrão e o atual sempre aparecem, mesmo fora da lista do Google
+  function modelOptions(list, current) {
+    const ids = [...new Set([GeminiReader.DEFAULT_MODEL, current, ...list].filter(Boolean))];
+    return ids.map(id => `<option value="${esc(id)}" ${id === current ? "selected" : ""}>${esc(id)}${id === GeminiReader.DEFAULT_MODEL ? " (padrão)" : ""}</option>`).join("");
+  }
+  function geminiUsageText() {
+    const u = GeminiReader.usage();
+    if (!u.last) return "Este celular ainda não leu nenhuma foto com o Gemini.";
+    const when = new Date(u.last.t).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    return `Última leitura: ${u.last.m}, em ${when}. Nos últimos 30 dias: ${u.reads30} ${u.reads30 === 1 ? "leitura" : "leituras"} e ${u.quota30} ${u.quota30 === 1 ? "erro" : "erros"} de cota (429).`;
+  }
   function geminiSheet() {
     const g = S.meta.gemini || {};
     openSheet(`
@@ -650,8 +658,9 @@
         <label class="field"><span>Chave de API do Google AI Studio</span><input id="gKey" type="password" autocomplete="off" spellcheck="false" placeholder="Cole aqui a chave (começa com AIza…)" value="${esc(g.key || "")}"></label>
         <label class="check"><input type="checkbox" id="gShow"> <span>Mostrar a chave</span></label>
         <details class="raw"><summary>Avançado</summary>
-          <label class="field" style="margin-top:10px"><span>Modelo</span><input id="gModel" autocomplete="off" spellcheck="false" value="${esc(g.model || GeminiReader.DEFAULT_MODEL)}"></label>
-          <span class="hint">O padrão (${GeminiReader.DEFAULT_MODEL}) sempre aponta para o Gemini Flash mais recente.</span>
+          <label class="field" style="margin-top:10px"><span>Modelo</span><select id="gModel">${modelOptions([], g.model || GeminiReader.DEFAULT_MODEL)}</select></label>
+          <span class="hint" id="gModelHint">O padrão (${GeminiReader.DEFAULT_MODEL}) sempre aponta para o Gemini Flash mais recente.${g.key ? " Buscando os modelos que a sua chave pode usar…" : " Com a chave salva, a lista mostra os modelos que ela pode usar."}</span>
+          <p class="hint" id="gUse">${esc(geminiUsageText())}</p>
         </details>
         <div class="notice info"><span><b>Privacidade:</b> no plano gratuito do Gemini, o Google pode usar as fotos enviadas para melhorar os produtos dele. Uma NFC-e pode trazer CPF e o final do cartão. Ativar o faturamento no Google AI Studio impede esse uso.</span></div>
         <p class="hint">A chave fica guardada só neste celular e não entra no backup. Para protegê-la, restrinja a chave ao site <b>jessicadopke.github.io</b> no Google Cloud Console.</p>
@@ -663,6 +672,12 @@
         </div>
       </form>`, () => {
       $("gShow").addEventListener("change", e => { $("gKey").type = e.target.checked ? "text" : "password"; });
+      const fillModels = list => { const cur = $("gModel").value; $("gModel").innerHTML = modelOptions(list, cur); };
+      if (g.key) GeminiReader.listModels(g.key).then(list => {
+        if (!$("gModel")) return;
+        fillModels(list);
+        $("gModelHint").textContent = `O padrão (${GeminiReader.DEFAULT_MODEL}) sempre aponta para o Gemini Flash mais recente. ${list.length} modelos disponíveis para a sua chave.`;
+      }, () => { if ($("gModelHint")) $("gModelHint").textContent = `O padrão (${GeminiReader.DEFAULT_MODEL}) sempre aponta para o Gemini Flash mais recente. Não foi possível buscar a lista agora.`; });
       $("gDel") && $("gDel").addEventListener("click", async () => {
         const ok = await run(() => Store.setMeta({ ...S.meta, gemini: { enabled: false, key: "", model: g.model || "" } }), "Chave do Gemini removida.");
         if (ok) closeSheet();
@@ -677,7 +692,7 @@
         if (key && key.length < 20) { $("gErr").textContent = `A chave colada parece incompleta (${key.length} caracteres). Copie de novo no Google AI Studio.`; return; }
         if (key) {
           $("gSave").disabled = true; $("gSave").textContent = "Testando…";
-          try { await GeminiReader.test(key); }
+          try { fillModels(await GeminiReader.test(key)); }
           catch (err) {
             $("gErr").textContent = GeminiReader.explain(err);
             $("gSave").disabled = false; $("gSave").textContent = "Testar e salvar";
@@ -1001,7 +1016,7 @@
           <div class="tx ${t.kind === "credit" ? "in" : ""}">
             <span class="ic">${esc(ic)}</span>
             <div class="d"><div class="t">${esc(t.desc || (t.kind === "credit" ? "Crédito" : "Compra"))}</div><div class="s">${esc(sub)}</div></div>
-            <span class="a num ${t.kind === "credit" ? "in" : ""}">${t.kind === "credit" ? "+" : "−"}${brl(t.amount)}${typeof t.reportedBalance === "number" ? `<span class="rb">saldo no cupom ${brl(t.reportedBalance)}</span>` : ""}</span>
+            <span class="a num ${t.kind === "credit" ? "in" : ""}">${t.kind === "credit" ? "+" : "−"}${brl(t.amount)}${typeof t.reportedBalance === "number" ? `<span class="rb" title="Saldo impresso no cupom">saldo ${brl(t.reportedBalance)}</span>` : ""}</span>
             <span class="acts">
               ${t.receiptId ? `<button class="mini" data-act="view-receipt" data-id="${t.id}" aria-label="Ver foto do cupom">foto</button>` : ""}
               <button class="mini x" aria-label="Apagar lançamento" data-act="del-tx" data-id="${t.id}">×</button>
@@ -1557,12 +1572,23 @@
     let geminiFail = null, geminiLog = "";
     if (!geminiOn()) geminiLog = !(S.meta.gemini && S.meta.gemini.key) ? "Gemini: sem chave salva." : !(S.meta.gemini && S.meta.gemini.enabled) ? "Gemini: desligado em Ajustes." : !navigator.onLine ? "Gemini: sem internet." : "";
     if (geminiOn()) {
-      $("scanStatus").textContent = "Lendo com o Gemini…";
+      // Andamento: modelo da tentativa atual, troca de modelo e tempo decorrido
+      let gNow = "Lendo com o Gemini…";
+      const showNow = () => { if (alive && $("scanStatus")) $("scanStatus").textContent = `${gNow} ${Math.round((Date.now() - t0) / 1000)} s`; };
+      const onProgress = ({ model, prev }) => {
+        gNow = !prev ? `Lendo com o Gemini (${model})…`
+          : prev.running ? `${prev.model} está demorando; tentando também ${model}…`
+          : `${prev.model}: ${GeminiReader.shortStatus(prev.status)}. Tentando ${model}…`;
+        showNow();
+      };
+      showNow();
+      const tick = setInterval(showNow, 1000);
       $("scanBar").parentElement.hidden = true;
       try {
         // 1600 px bastam para o Gemini ler o cupom; foto menor sobe e é processada mais rápido
         const img = await shrink(file, 1600, 0.8, false);
-        const g = await GeminiReader.read(img, { key: S.meta.gemini.key, model: S.meta.gemini.model }, ctl && ctl.signal);
+        const g = await GeminiReader.read(img, { key: S.meta.gemini.key, model: S.meta.gemini.model }, ctl && ctl.signal, onProgress);
+        clearInterval(tick);
         if (!alive || !$("scanBody")) return;
         const p = g.parsed;
         p.how = `Gemini: ${GeminiReader.describe(g.attempts)}. Total: ${secs()}.`;
@@ -1570,6 +1596,7 @@
         reviewForm(sheet, await stored, presetCardId, p, msg, g.raw);
         return;
       } catch (e) {
+        clearInterval(tick);
         if (!alive || !$("scanBody")) return;
         console.warn("gemini", e);
         geminiFail = GeminiReader.explain(e);
@@ -1599,40 +1626,9 @@
     }
   }
 
-  // Chave da loja: CNPJ do cupom ou, sem ele, o nome normalizado.
-  const storeKeyOf = d => d && d.cnpj ? "cnpj:" + d.cnpj : d && d.store ? "loja:" + fold(d.store).replace(/[^a-z0-9]/g, "").slice(0, 24) : null;
-  const descKey = s => "loja:" + fold(s).replace(/[^a-z0-9]/g, "").slice(0, 24);
-
-  // Pontua cada cartão como provável pagador do cupom. Sinais, do mais forte ao mais fraco:
-  // final do cartão, saldo impresso que fecha com o saldo daqui, loja onde o cartão já foi usado, emissor, tipo.
-  function rankCards(d, amount, saldos, presetCardId) {
-    const saldoList = (Array.isArray(saldos) ? saldos : [saldos]).filter(s => s !== null && s >= 0);
-    const finals = new Set([...(d && d.last4s) || [], ...(d && d.last4 ? [d.last4] : [])]);
-    const key = storeKeyOf(d);
-    const nameKey = d && d.store ? descKey(d.store) : null;
-    const used = {};
-    if (key || nameKey) for (const t of S.txs) {
-      if (t.kind !== "debit") continue;
-      if ((key && t.storeKey === key) || (nameKey && descKey(t.desc || "") === nameKey)) used[t.cardId] = (used[t.cardId] || 0) + 1;
-    }
-    return S.cards.map(c => {
-      let score = 0; const reasons = [];
-      if (c.last4 && finals.has(c.last4)) { score += 100; reasons.push("final " + c.last4); }
-      const bal = c.balance || 0;
-      if (amount > 0 && saldoList.some(s => Math.abs(bal - amount - s) <= 1)) { score += 90; reasons.push("o saldo do cupom fecha com este cartão"); }
-      else if (saldoList.some(s => Math.abs(bal - s) <= 1)) { score += 50; reasons.push("saldo igual ao do cupom"); }
-      if (used[c.id]) { score += Math.min(45, 15 * used[c.id]); reasons.push(used[c.id] === 1 ? "já usado nesta loja" : `usado ${used[c.id]} vezes nesta loja`); }
-      if (d && d.issuer && c.issuer === d.issuer) { score += 20; reasons.push(d.issuer); }
-      // titular do cupom: basta o primeiro nome bater ("Ana" no app, "ANA PAULA SILVA" no cupom)
-      if (d && d.holder && c.holder && fold(c.holder).split(/\s+/)[0] === fold(d.holder).split(/\s+/)[0]) { score += 25; reasons.push("titular " + c.holder); }
-      if (d && d.category) {
-        if (d.category === "Mercado" && c.type === "alimentacao") score += 5;
-        if (["Restaurante", "Lanche", "Padaria", "Delivery"].includes(d.category) && c.type === "refeicao") score += 5;
-      }
-      if (c.id === presetCardId) score += 30;
-      return { card: c, score, reasons };
-    }).sort((a, b) => b.score - a.score || (a.card.createdAt || 0) - (b.card.createdAt || 0));
-  }
+  // Escolha do cartão pelo cupom: js/match.js (funções puras, com testes)
+  const storeKeyOf = Match.storeKeyOf;
+  const rankCards = (d, amount, saldos, presetCardId) => Match.rankCards(S.cards, S.txs, d, amount, saldos, presetCardId);
 
   // ---------- divisão do pagamento: vários vales + crédito, débito, Pix, dinheiro ----------
   const OTHER_KINDS = { credito: "Cartão de crédito", debito: "Cartão de débito", pix: "Pix", dinheiro: "Dinheiro", outro: "Outra forma" };
@@ -1761,54 +1757,9 @@
   function reviewForm(sheet, blob, presetCardId, d, msg, rawText) {
     if (!sheet.querySelector("#scanBody")) return;
     d = d || {};
-    // Saldos impressos (um por comprovante de vale), já como "saldo depois da compra"
-    let saldos = d.balances && d.balances.length ? d.balances.slice() : typeof d.balance === "number" ? [d.balance] : [];
-    if (saldos.length === 1 && d.balanceMoment === "antes_compra" && d.paid > 0) saldos = [saldos[0] - d.paid];
-    // Partes pagas com vale e com outras formas, lidas da NFC-e
+    // Um cartão sugerido para cada parte paga com vale, e avisos de cartão que pode não estar na carteira
+    const { saldos, others, parts, unknown } = Match.matchReceipt(d, S.cards, S.txs, presetCardId, defaultCardId());
     const pays = d.payments || [];
-    let valeAmts = pays.filter(p => p.kind === "vale").map(p => p.amount);
-    if (!valeAmts.length && d.paid > 0) valeAmts = [d.paid];
-    const others = pays.filter(p => p.kind !== "vale").map(p => ({ kind: p.kind, amount: p.amount }));
-    // Escolhe um cartão para cada parte, sem repetir, do mais provável para o menos provável
-    const taken = new Set();
-    // Quando a leitura separa as pistas de cada vale (emissor, final, saldo), cada linha usa só as suas.
-    const perVale = Array.isArray(d.vales) && d.vales.length === valeAmts.length ? d.vales : null;
-    const parts = (valeAmts.length ? valeAmts : [0]).map((a, i) => {
-      const v = perVale && perVale[i];
-      const dRow = v ? { ...d, issuer: v.issuer || null, holder: v.holder || null, last4: v.last4 || null, last4s: v.last4 ? [v.last4] : [] } : d;
-      const sRow = v && v.saldo !== null ? [v.saldo] : v ? [] : saldos;
-      const r = rankCards(dRow, a, sRow, presetCardId).filter(x => !taken.has(x.card.id));
-      const pick = r[0] && r[0].score > 0 ? r[0] : null;
-      if (pick) taken.add(pick.card.id);
-      const confident = pick && pick.score >= 50 && (!r[1] || pick.score - r[1].score >= 20);
-      return { amount: a, pick, confident, cardId: pick ? pick.card.id : i === 0 ? (presetCardId || defaultCardId()) : "" };
-    });
-    // Cartões do cupom que podem não estar na carteira. Sem um sinal forte (final ou saldo que fecha)
-    // apontando para um cartão cadastrado:
-    // - "novo": o cupom mostra um final ou emissor que nenhum cartão cadastrado tem;
-    // - "saldo": o saldo impresso não fecha com nenhum cartão cadastrado;
-    // nesses dois casos o app não chuta um cartão: você escolhe ou cadastra.
-    // - "fraco": o cartão sugerido veio só de pistas fracas (emissor, loja); fica sugerido, com a opção de cadastrar outro.
-    const unknown = parts.map((pt, i) => {
-      const v = perVale ? perVale[i] : i === 0 ? { issuer: d.issuer || null, issuerRaw: d.issuerRaw || null, holder: d.holder || null, type: d.type || null, last4: d.last4 || null, saldo: saldos.length === 1 ? saldos[0] : null } : null;
-      if (!v || (!v.issuer && !v.issuerRaw && !v.last4 && (v.saldo === null || v.saldo === undefined))) return null;
-      if (pt.pick && pt.pick.reasons.some(r => /^final |saldo/.test(r))) return null;
-      const saldo = v.saldo === undefined ? null : v.saldo;
-      const lastUnknown = !!v.last4 && !S.cards.some(c => c.last4 === v.last4);
-      const issuerUnknown = !!v.issuer && !S.cards.some(c => c.issuer === v.issuer);
-      const saldoOff = saldo !== null && saldo >= 0 && !S.cards.some(c => Math.abs((c.balance || 0) - pt.amount - saldo) <= 1 || Math.abs((c.balance || 0) - saldo) <= 1);
-      const base = { i, issuer: v.issuer, issuerRaw: v.issuerRaw || null, holder: v.holder || null, type: v.type || null, last4: v.last4, saldo, amount: pt.amount };
-      if (lastUnknown || issuerUnknown || saldoOff) {
-        const weak = pt.pick && pt.pick.card;
-        // "É o X?" só quando o cupom não contradiz esse cartão (outro final ou outro emissor)
-        const alt = weak && !(lastUnknown && weak.last4) && !(issuerUnknown) ? weak : null;
-        pt.cardId = ""; // não chuta um cartão errado: escolha ou cadastre
-        pt.pick = null;
-        return { ...base, kind: lastUnknown || issuerUnknown ? "novo" : "saldo", alt };
-      }
-      if (pt.pick && !pt.confident) return { ...base, kind: "fraco" };
-      return null;
-    }).filter(Boolean);
     const unkLabel = u => esc([u.issuer || u.issuerRaw, u.last4 ? "final " + u.last4 : ""].filter(Boolean).join(" ") || "deste cupom");
     const unknownHTML = unknown.map(u => {
       const amt = u.amount ? ` (<span class="num">${brl(u.amount)}</span>)` : "";
@@ -1916,7 +1867,7 @@
             </div>
             <div class="grid2">
               <label class="field"><span>Final do cartão</span><input id="ncLast${k}" inputmode="numeric" maxlength="4" value="${esc(u.last4 || "")}" placeholder="4 últimos dígitos"></label>
-              <label class="field"><span>${u.saldo !== null ? "Saldo depois desta compra" : "Saldo antes desta compra"}</span><input id="ncBal${k}" class="num" inputmode="decimal" placeholder="0,00" value="${u.saldo !== null && u.saldo >= 0 ? fmtInput(u.saldo) : ""}"></label>
+              <label class="field"><span>${u.saldo !== null ? "Saldo após a compra" : "Saldo antes da compra"}</span><input id="ncBal${k}" class="num" inputmode="decimal" placeholder="0,00" value="${u.saldo !== null && u.saldo >= 0 ? fmtInput(u.saldo) : ""}"></label>
             </div>
             <span class="hint">${u.saldo !== null ? "Veio do saldo impresso no cupom. " : ""}O dia e o valor do crédito você completa depois, em Editar cartão.</span>
             <div class="err" id="ncErr${k}"></div>

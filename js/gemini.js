@@ -35,7 +35,8 @@
             titular: { type: "STRING", nullable: true, description: "nome do titular do cartão de benefício impresso no comprovante, se houver" },
             texto_cartao: { type: "STRING", nullable: true, description: "linha do comprovante que identifica o cartão ou a rede, copiada como está (ex.: VR BENEFICIOS VOUCHER A VISTA, ALELO REFEICAO)" },
             tipo_cartao: { type: "STRING", enum: ["alimentacao", "refeicao", "flex", "desconhecido"] },
-            final_cartao: { type: "STRING", nullable: true, description: "4 últimos dígitos do cartão, se impressos" },
+            cartao_impresso: { type: "STRING", nullable: true, description: "número do cartão exatamente como impresso no comprovante, com a máscara (ex.: 637707******4403)" },
+            final_cartao: { type: "STRING", nullable: true, description: "4 ÚLTIMOS dígitos do cartão (os que vêm depois da máscara), se impressos" },
             saldo: { type: "NUMBER", nullable: true, description: "saldo do cartão de benefício impresso no comprovante, em reais" },
             saldo_momento: { type: "STRING", enum: ["apos_compra", "antes_compra", "desconhecido"] },
           },
@@ -57,7 +58,8 @@ Extraia os dados no formato pedido. Regras:
 - "emissor": a rede ou administradora do cartão de benefício, que costuma aparecer no comprovante da maquininha (ex.: "VR BENEFICIOS" → VR, "PLUXEE" → Pluxee, "ALELO REFEICAO" → Alelo). Não confunda com a adquirente da maquininha (Cielo, Rede, Stone, GetNet, PagSeguro, SiTef) nem com a bandeira de crédito. "texto_cartao": copie a linha onde o emissor aparece.
 - "tipo_cartao": alimentacao, refeicao ou flex (multibenefício) só se o comprovante disser; senão "desconhecido".
 - "titular": nome da pessoa dona do cartão, se o comprovante imprimir (PORTADOR, TITULAR, NOME). Nunca use o nome do operador de caixa, da loja ou do "CONSUMIDOR".
-- "final_cartao": só os 4 últimos dígitos, se legíveis.
+- "cartao_impresso": copie o número do cartão como está no comprovante, com os asteriscos ou X da máscara.
+- "final_cartao": só os 4 ÚLTIMOS dígitos, os que aparecem DEPOIS da máscara (em 637707******4403, o final é 4403). Os primeiros dígitos identificam a rede do cartão e nunca são o final. Se o final não estiver impresso, use null.
 - "categoria": a que melhor descreve a loja.`;
 
   async function call(key, model, body, signal, ms) {
@@ -128,7 +130,7 @@ Extraia os dados no formato pedido. Regras:
 
   // Tenta o modelo escolhido e os de reserva (ver HEDGE_MS), sem passar de BUDGET_MS no total.
   // Cada tentativa fica registrada (modelo, resultado, tempo) para a tela de conferência.
-  function generate(cfg, parts, schema, signal) {
+  function generate(cfg, parts, schema, signal, onProgress) {
     const first = cfg.model || DEFAULT_MODEL;
     let models = [first, ...FALLBACK_MODELS.filter(m => m !== first)].filter(m => !gone.has(m));
     if (!models.length) models = [first];
@@ -148,6 +150,7 @@ Extraia os dados no formato pedido. Regras:
         if (signal) signal.removeEventListener("abort", stopAll);
         // tentativas ainda em andamento entram no registro como canceladas
         attempts.forEach(a => { if (a.ok === undefined) Object.assign(a, { ok: false, status: "cancelado", ms: Date.now() - a.t }); delete a.t; });
+        logUse(attempts);
         fn(v);
       };
       const giveUp = e => { e.attempts = attempts; finish(reject, e); };
@@ -159,8 +162,11 @@ Extraia os dados no formato pedido. Regras:
           return;
         }
         const model = models[next++];
+        const prev = attempts[attempts.length - 1] || null;
         const rec = { model, t: Date.now() };
         attempts.push(rec);
+        // avisa a tela: modelo da tentativa e, se houver, o que aconteceu com a anterior
+        if (onProgress) try { onProgress({ model, prev: prev && { model: prev.model, running: prev.ok === undefined, status: prev.status } }); } catch (e) {}
         running++;
         if (next < models.length) hedge = setTimeout(launch, HEDGE_MS);
         attempt(cfg.key, model, parts, schema, ctl.signal, deadline).then(json => {
@@ -185,6 +191,9 @@ Extraia os dados no formato pedido. Regras:
       launch();
     });
   }
+
+  // Resultado de uma tentativa em poucas palavras, para a tela de leitura
+  const shortStatus = st => st === 429 ? "sem cota agora" : st === 404 ? "não encontrado" : st === 503 ? "sobrecarregado" : st >= 500 ? `erro ${st} no Google` : st === "tempo esgotado" ? "não respondeu a tempo" : st === "cancelado" ? "cancelado" : `erro ${st}`;
 
   // "gemini-flash-latest: 503 (2,1 s) · gemini-2.5-flash: ok (6,4 s)"
   const describe = attempts => (attempts || []).map(a => `${a.model}: ${a.ok ? "ok" : a.status} (${(a.ms / 1000).toFixed(1).replace(".", ",")} s)`).join(" · ");
@@ -212,24 +221,31 @@ Extraia os dados no formato pedido. Regras:
     r.readAsDataURL(blob);
   });
   const cents = v => typeof v === "number" && isFinite(v) && v >= 0 ? Math.round(v * 100) : null;
-  const ISSUER_NAMES = [
-    [/alelo/i, "Alelo"], [/pluxee|sodexo/i, "Pluxee (Sodexo)"], [/ticket/i, "Ticket"], [/\bvr\b|vr ?benef/i, "VR"],
-    [/flash/i, "Flash"], [/caju/i, "Caju"], [/ifood/i, "iFood Benefícios"], [/swile/i, "Swile"], [/\bben\b/i, "Ben"],
-    [/volus/i, "Volus"], [/vale ?card/i, "Valecard"], [/up ?brasil|policard/i, "Up Brasil"], [/vero ?card/i, "Verocard"],
-    [/green ?card/i, "Greencard"], [/nutricash/i, "Nutricash"], [/good ?card/i, "GoodCard"],
-  ];
   // "CARLA DE SOUZA" → "Carla de Souza"
   const nameCase = s => s.toLowerCase().replace(/(^|\s)\p{L}/gu, m => m.toUpperCase()).replace(/\b(De|Da|Do|Dos|Das|E)\b/g, m => m.toLowerCase());
-  const issuerOf = s => { if (!s) return null; for (const [re, n] of ISSUER_NAMES) if (re.test(s)) return n; return null; };
+  // Emissores vêm de issuers.js: primeiro pelo nome escrito, depois como texto impresso ("VOLUS ALIMENTACAO")
+  const issuerOf = s => s ? Issuers.fromName(s) || Issuers.fromPrint(String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase()) : null;
   // Emissor fora da lista do app: guarda o nome lido, para usar no nome do cartão novo
   const rawIssuer = s => { const t = String(s || "").trim(); return t && !/^(outro|null|desconhecido)$/i.test(t) && !issuerOf(t) ? t.slice(0, 24) : null; };
   // Nome do titular: só letras, de 2 a 40 caracteres
   const holderOf = s => { const t = String(s || "").replace(/\s+/g, " ").trim(); return /^[\p{L} .'-]{2,40}$/u.test(t) && !/consumidor|operador|caixa/i.test(t) ? nameCase(t) : null; };
+  // Final do cartão: os 4 dígitos depois da máscara do número impresso ("637707******4403" → 4403).
+  // O "final" informado pelo Gemini só vale se não for o começo do número (os dígitos da rede do cartão).
+  function last4Of(printed, final) {
+    const p = String(printed || "").replace(/\s/g, "");
+    const masked = /[*Xx•]/.test(p) ? p.match(/[*Xx•](\d{4})$/) : null;
+    if (masked) return masked[1];
+    const f = String(final || "").replace(/\D/g, "");
+    if (!/^\d{4}$/.test(f)) return null;
+    const lead = p.match(/^\d{4,}/);
+    if (lead && lead[0].startsWith(f) && !p.endsWith(f)) return null;
+    return f;
+  }
 
   // Converte a resposta do Gemini para o formato de ReceiptReader.parse()
   function toParsed(j) {
     const pays = (Array.isArray(j.pagamentos) ? j.pagamentos : [])
-      .map(p => ({ kind: ["vale", "credito", "debito", "pix", "dinheiro", "outro"].includes(p.forma) ? p.forma : "outro", amount: cents(p.valor), issuer: issuerOf(p.emissor) || issuerOf(p.texto_cartao), issuerRaw: rawIssuer(p.emissor), holder: holderOf(p.titular), type: ["alimentacao", "refeicao", "flex"].includes(p.tipo_cartao) ? p.tipo_cartao : null, last4: /^\d{4}$/.test(String(p.final_cartao || "")) ? String(p.final_cartao) : null, saldo: cents(p.saldo), moment: p.saldo_momento }))
+      .map(p => ({ kind: ["vale", "credito", "debito", "pix", "dinheiro", "outro"].includes(p.forma) ? p.forma : "outro", amount: cents(p.valor), issuer: issuerOf(p.emissor) || issuerOf(p.texto_cartao), issuerRaw: rawIssuer(p.emissor), holder: holderOf(p.titular), type: ["alimentacao", "refeicao", "flex"].includes(p.tipo_cartao) ? p.tipo_cartao : null, last4: last4Of(p.cartao_impresso, p.final_cartao), saldo: cents(p.saldo), moment: p.saldo_momento }))
       .filter(p => p.amount > 0);
     const vales = pays.filter(p => p.kind === "vale");
     // saldos impressos sempre como "depois da compra"
@@ -271,9 +287,9 @@ Extraia os dados no formato pedido. Regras:
   }
 
   // Lê o cupom. cfg = { key, model }. Devolve { parsed, raw, model }.
-  async function read(blob, cfg, signal) {
+  async function read(blob, cfg, signal, onProgress) {
     const data = await toB64(blob);
-    const { json, model, attempts } = await generate(cfg, [{ text: PROMPT }, { inline_data: { mime_type: blob.type || "image/jpeg", data } }], SCHEMA, signal);
+    const { json, model, attempts } = await generate(cfg, [{ text: PROMPT }, { inline_data: { mime_type: blob.type || "image/jpeg", data } }], SCHEMA, signal, onProgress);
     return { parsed: toParsed(json), raw: JSON.stringify(json, null, 2), model, attempts };
   }
 
@@ -297,9 +313,9 @@ Extraia os dados no formato pedido. Regras:
 - "tipo": alimentacao (vale-alimentação, mercado), refeicao (vale-refeição, restaurante), flex (multibenefício com carteiras) ou outro.
 - "saldo": só se a imagem mostrar o saldo disponível. Valores em reais como número decimal. Use null quando não aparecer. Não invente.`;
 
-  async function readCard(blob, cfg, signal) {
+  async function readCard(blob, cfg, signal, onProgress) {
     const data = await toB64(blob);
-    const { json: j } = await generate(cfg, [{ text: CARD_PROMPT }, { inline_data: { mime_type: blob.type || "image/jpeg", data } }], CARD_SCHEMA, signal);
+    const { json: j } = await generate(cfg, [{ text: CARD_PROMPT }, { inline_data: { mime_type: blob.type || "image/jpeg", data } }], CARD_SCHEMA, signal, onProgress);
     const last4 = String(j.final_cartao || "").replace(/\D/g, "").slice(-4);
     return {
       source: "gemini",
@@ -312,15 +328,42 @@ Extraia os dados no formato pedido. Regras:
     };
   }
 
-  // Confere se a chave funciona (lista os modelos; não gasta cota de geração).
-  async function test(key, signal) {
-    const res = await fetch(`${API}/models?pageSize=1`, { headers: { "x-goog-api-key": key }, signal });
+  // Modelos que a chave pode usar para ler fotos. Também confere se a chave funciona (não gasta cota de geração).
+  // Fora da lista: modelos de voz, imagem, embeddings e experimentais de outros usos.
+  async function listModels(key, signal) {
+    const res = await fetch(`${API}/models?pageSize=200`, { headers: { "x-goog-api-key": key }, signal });
     if (!res.ok) {
       let msg = ""; try { msg = (await res.json()).error.message || ""; } catch (e) {}
       const err = new Error(msg || "HTTP " + res.status); err.status = res.status; throw err;
     }
-    return true;
+    const data = await res.json();
+    const ids = (data.models || [])
+      .filter(m => (m.supportedGenerationMethods || []).includes("generateContent"))
+      .map(m => String(m.name || "").replace(/^models\//, ""))
+      .filter(id => /^gemini-/.test(id) && !/tts|image|embedding|live|audio|native|robotics|computer-use/.test(id));
+    // os apelidos "latest" primeiro, depois os demais em ordem alfabética
+    return [...new Set(ids)].sort((a, b) => (/latest$/.test(b) - /latest$/.test(a)) || a.localeCompare(b));
+  }
+  const test = listModels;
+
+  // Uso do Gemini neste celular (fica só aqui, fora do backup): as últimas 100 tentativas
+  const USE_KEY = "ciclo-gemini-uso";
+  function logUse(attempts) {
+    try {
+      const log = JSON.parse(localStorage.getItem(USE_KEY) || "[]");
+      for (const a of attempts) log.push({ t: Date.now(), m: a.model, ok: !!a.ok, st: a.ok ? null : a.status });
+      localStorage.setItem(USE_KEY, JSON.stringify(log.slice(-100)));
+    } catch (e) {}
+  }
+  // { last: { m, t } (último modelo que leu), reads30, quota30 } nos últimos 30 dias
+  function usage() {
+    let log = [];
+    try { log = JSON.parse(localStorage.getItem(USE_KEY) || "[]"); } catch (e) {}
+    const since = Date.now() - 30 * 86400000;
+    const recent = log.filter(x => x.t >= since);
+    const oks = log.filter(x => x.ok);
+    return { last: oks.length ? oks[oks.length - 1] : null, reads30: recent.filter(x => x.ok).length, quota30: recent.filter(x => x.st === 429).length };
   }
 
-  window.GeminiReader = { read, readCard, test, toParsed, explain, describe, DEFAULT_MODEL };
+  window.GeminiReader = { read, readCard, test, listModels, usage, toParsed, explain, describe, shortStatus, DEFAULT_MODEL };
 })();

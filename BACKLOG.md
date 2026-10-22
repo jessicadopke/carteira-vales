@@ -5,98 +5,45 @@ O que falta fazer no app, em ordem de prioridade. Quando um item fica pronto, el
 **Tipos:** 🐞 defeito · 🔧 manutenção (não muda o app para quem usa) · ✨ função nova · 🧪 validação.
 **Tamanho:** P (até 1 hora), M (algumas horas), G (um dia ou mais).
 
-*Atualizado em 22/10/2026, versão 1.9.0.*
+*Atualizado em 22/10/2026, versão 1.10.0.*
 
 ## Agora
 
 | # | Item | Tipo | Tam. |
 |---|------|------|------|
-| B-01 | Descobrir por que o Gemini não foi usado no celular | 🐞 | P |
-| B-02 | Testar no celular as funções da 1.8.x | 🧪 | P |
-| B-03 | Ler o final do cartão no formato `************4321` | 🐞 | P |
+| B-02 | Testar no celular as funções da 1.8.x a 1.10 | 🧪 | P |
 | B-04 | Pôr o código no git e publicar por `git push` | 🔧 | M |
-| B-14 | Campos do cadastro de cartão desalinhados | 🐞 | M |
 
-### B-01 · Descobrir por que o Gemini não foi usado no celular
-Na 1.8.2, a leitura demorou e no fim o app usou o leitor do celular. A 1.8.3 mostra **Como foi lido** na conferência, com cada tentativa do Gemini (modelo, erro e tempo).
-- **Causa (21/10/2026):** "Como foi lido" mostrou `gemini-flash-latest: tempo esgotado (30,6 s)`. O modelo da geração 3 ainda pensava com `thinkingLevel: low`, e no tempo esgotado o app não tentava outro modelo.
-- **Correção na 1.8.4:** raciocínio `minimal` e um modelo de reserva em paralelo depois de 12 s.
-- **Resultado (21/10/2026):** na 1.8.4 o Gemini leu o cupom real (data, valor, saldo e final do cartão). Falta só confirmar o tempo em "Como foi lido" em mais algumas leituras.
-- **Pronto quando:** a causa for conhecida e corrigida, ou explicada na tela do Gemini (por exemplo, sugerir outro modelo ou o faturamento).
-
-### B-02 · Testar no celular as funções da 1.8.x
-Até agora, tudo foi testado no computador, com o Gemini simulado e fotos geradas.
+### B-02 · Testar no celular as funções da 1.8.x a 1.10
+Só a Jessica pode fazer, no celular. O resto foi testado no computador, com o Gemini simulado.
 - [ ] "Ler cupom" abre a câmera traseira.
 - [x] Gemini lê um cupom real; "Como foi lido" mostra o tempo (21 e 22/10/2026).
-- [ ] Cupom pago com cartão que não está na carteira: aparece o aviso e "Cadastrar agora" funciona.
+- [x] Cupom pago com cartão que não está na carteira: aparece o aviso e "Cadastrar agora" funciona (22/10/2026, cartão Volus; o final veio errado e foi corrigido na 1.10.0).
+- [ ] Final do cartão certo num comprovante com número mascarado (1.10.0).
+- [ ] Andamento da leitura com o Gemini e lista de modelos em Ajustes (1.10.0).
 - [ ] Cadastro de cartão por foto (frente do cartão) e por print do app do emissor.
 - [ ] Atualizar pelo app (Ajustes → Sobre o app).
 - [ ] Instalar o app na tela inicial pelo Chrome (ainda não foi instalado).
 
-### B-03 · Ler o final do cartão no formato `************4321`
-No teste da 1.8.2, o leitor do celular não achou o final num comprovante com `CARTAO ************4321`. Sem o final, o app identifica o cartão só pelo saldo ou pelo emissor.
-- **Pronto quando:** os formatos comuns de comprovante TEF forem reconhecidos, entre eles `************4321`, `**** **** **** 4321`, `XXXX4321` e `FINAL 4321`, mesmo com os erros típicos do OCR (`*` lido como `x` ou `+`).
-
 ### B-04 · Pôr o código no git e publicar por `git push`
 Hoje a pasta local não tem git, e as versões sobem arquivo por arquivo pela página de upload do GitHub. Na 1.8.2, um envio não entrou e a release ficou apontando para o código incompleto.
-- Iniciar o git na pasta `ciclo/app`, ligar ao repositório `jessicadopke/ciclo` e trazer o histórico de lá.
-- Fazer o login do GitHub no terminal uma vez (quem faz é a Jessica).
-- Atualizar a seção "Versões" do README com o passo a passo novo.
+- [x] Iniciar o git na pasta `ciclo/app`, ligar ao repositório `jessicadopke/ciclo` e trazer o histórico de lá (22/10/2026).
+- [x] Fazer o login do GitHub no terminal uma vez (feito pela Jessica em 22/10/2026, para o radar de preços).
+- [x] Atualizar a seção "Versões" do README com o passo a passo novo.
+- [ ] Publicar a 1.10.0 por `git push` e criar a release a partir da tag.
 - **Pronto quando:** uma versão for publicada só com `git push` e a release criada a partir da tag.
-
-### B-14 · Campos do cadastro de cartão desalinhados
-No formulário **Novo cartão** da conferência, o rótulo "Saldo depois desta compra" quebra em duas linhas, e a caixa de saldo fica mais baixa que a do "Final do cartão", ao lado.
-- Alinhar as caixas de cada linha pela base, ou encurtar o rótulo (por exemplo, "Saldo após a compra").
-- Revisar os outros formulários em duas colunas, numa tela estreita (360 px) e com a fonte do Android aumentada.
-- Incluir a revisão de acessibilidade, que estava em Ideias: contraste, tamanho das áreas de toque e rótulos para o leitor de tela.
-- **Pronto quando:** os campos lado a lado ficarem alinhados em 360 px e com fonte grande, e a revisão de acessibilidade estiver registrada no CHANGELOG.
 
 ## Próximas
 
 | # | Item | Tipo | Tam. |
 |---|------|------|------|
-| B-05 | Testes automáticos da leitura de cupom | 🔧 | M |
 | B-06 | Dividir o `app.js` em módulos | 🔧 | G |
-| B-07 | Lista de emissores num lugar só | 🔧 | P |
-| B-08 | Corrigir a release v1.8.2 | 🔧 | P |
-| B-09 | Atualizar a descrição do repositório | 🔧 | P |
-| B-10 | Mostrar o andamento da leitura com o Gemini | ✨ | P |
-| B-11 | Escolher o modelo do Gemini por uma lista | ✨ | P |
-| B-12 | Lembrete de backup | ✨ | P |
-
-### B-05 · Testes automáticos da leitura de cupom
-Hoje cada versão é testada à mão. Foi assim que a falha do aviso de cartão novo passou na 1.8.0.
-- Separar em funções testáveis o que hoje fica dentro da tela de conferência: escolha do cartão provável (`rankCards`) e detecção de cartão novo.
-- Juntar textos de cupons reais, anonimizados, com o resultado esperado para cada um: valor, saldo, emissor, final e formas de pagamento.
-- Juntar respostas do Gemini salvas, para testar `toParsed` sem chamar o Google.
-- Rodar com Node (`node --test`), sem instalar dependências.
-- **Pronto quando:** os testes rodarem com um comando e cobrirem os casos dos defeitos já corrigidos (vários vales, cartão novo pelo final e pelo saldo, saldo antes ou depois da compra).
 
 ### B-06 · Dividir o `app.js` em módulos
 São 2.300 linhas num arquivo só, com um estado global único.
 - Separar em módulos ES, sem etapa de montagem: armazenamento, períodos, cofre, cartões, cupom e conferência, pagamento dividido, backup, telas e atualização.
 - Nada muda para quem usa. O service worker passa a guardar os arquivos novos.
-- **Depende de:** B-05, para mudar com segurança.
-
-### B-07 · Lista de emissores num lugar só
-Os nomes dos emissores (VR, Alelo, Pluxee, Ticket…) e as regras para reconhecê-los estão repetidos em `app.js`, `receipt.js` e `gemini.js`. Um emissor novo precisa entrar nos três. Na 1.9.0 entraram Volus, Valecard, Up Brasil, Verocard, Greencard, Nutricash e GoodCard, ainda nos três arquivos.
-
-### B-08 · Corrigir a release v1.8.2
-A tag aponta para o commit dos arquivos `js`, um commit antes de `version.json`, `sw.js` e CHANGELOG.
-- **Opção 1:** apagar a release e a tag v1.8.2 no GitHub e recriar no commit certo. A exclusão foi bloqueada para o Claude, então quem apaga é a Jessica.
-- **Opção 2:** deixar como está e registrar a observação nas notas da release.
-
-### B-09 · Atualizar a descrição do repositório
-A descrição ainda fala só em "leitura de cupom fiscal no celular". Incluir a leitura com o Gemini e o cadastro de cartão por foto.
-
-### B-10 · Mostrar o andamento da leitura com o Gemini
-Com o Gemini, a tela mostra só "Lendo com o Gemini…", sem barra de progresso. Mostrar o modelo da tentativa atual e o tempo decorrido. Ao trocar de modelo, avisar (por exemplo, "gemini-flash-latest sem cota, tentando gemini-2.5-flash…").
-
-### B-11 · Escolher o modelo do Gemini por uma lista
-Hoje o modelo é um campo de texto em "Avançado". Trocar por uma lista dos modelos que a chave pode usar, buscada no Google pela mesma chamada do "Testar e salvar". Mostrar qual modelo leu os últimos cupons e quantos erros de cota houve.
-
-### B-12 · Lembrete de backup
-Os dados ficam só no celular. Avisar no Início quando o último backup tiver mais de 30 dias ou quando houver muitos lançamentos novos desde ele. O app já guarda a data do último backup.
+- Os testes do B-05 (`node --test`) estão prontos e cobrem a leitura e a escolha do cartão; a parte de telas ainda não tem testes.
 
 ## Ideias
 

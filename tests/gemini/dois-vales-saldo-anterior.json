@@ -1,0 +1,9 @@
+{
+  "legivel": true,
+  "pagamentos": [
+    { "forma": "vale", "valor": 80, "emissor": "Alelo", "final_cartao": "1111", "saldo": 120, "saldo_momento": "apos_compra", "tipo_cartao": "alimentacao" },
+    { "forma": "vale", "valor": 50, "emissor": "Mega Benefícios", "final_cartao": "2222", "saldo": 350, "saldo_momento": "antes_compra", "tipo_cartao": "refeicao" },
+    { "forma": "pix", "valor": 20 }
+  ],
+  "categoria": "Mercado", "data": "2026-10-15", "valor_total": 150
+}
