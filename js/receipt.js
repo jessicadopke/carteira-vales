@@ -116,8 +116,15 @@
     [/\bIFOOD ?BENEF|\bIFOOD ?(?:CARD|REFEI|ALIMENT)/, "iFood Benefícios"],
     [/\bSWILE\b/, "Swile"],
     [/\bBEN ?(?:VISA|BENEF)/, "Ben"],
+    [/\bVOLUS\b/, "Volus"],
+    [/\bVALE ?CARD\b/, "Valecard"],
+    [/\bUP ?BRASIL\b|\bPOLICARD\b/, "Up Brasil"],
+    [/\bVERO ?CARD\b/, "Verocard"],
+    [/\bGREEN ?CARD\b/, "Greencard"],
+    [/\bNUTRICASH\b/, "Nutricash"],
+    [/\bGOOD ?CARD\b/, "GoodCard"],
   ];
-  const BENEFIT_WORDS = /VALE ?ALIMENT|VALE ?REFEI|VOUCHER|\bALIMENTACAO\b|\bREFEICAO\b|\bBENEFICIO|ALELO|PLUXEE|SODEXO|TICKET|\bVR\b|FLASH|CAJU|SWILE|\bVA\b|\bVR\b|\bVOUCH/;
+  const BENEFIT_WORDS = /VALE ?ALIMENT|VALE ?REFEI|VOUCHER|\bALIMENTACAO\b|\bREFEICAO\b|\bBENEFICIO|ALELO|PLUXEE|SODEXO|TICKET|\bVR\b|FLASH|CAJU|SWILE|\bVA\b|\bVR\b|\bVOUCH|VOLUS|VALE ?CARD|UP ?BRASIL|POLICARD|VERO ?CARD|GREEN ?CARD|NUTRICASH|GOOD ?CARD/;
   const CAT_RULES = [
     [/SUPERMERC|MERCADO|ATACAD|ASSAI|CARREFOUR|HIPER|MERCEARIA|HORTIFRUTI|EMPORIO/, "Mercado"],
     [/PADARIA|PANIFIC|CONFEITAR/, "Padaria"],
@@ -190,7 +197,7 @@
     // Todas as formas de pagamento da NFC-e (pode haver vários vales, cartão, Pix e dinheiro na mesma compra).
     // Com o cabeçalho "FORMA DE PAGAMENTO", lê só as linhas logo abaixo dele; sem ele, procura no cupom todo.
     const PAY_RULES = [
-      [/VALE ?ALIMENT|VALE ?REFEI|VOUCHER|\bALIMENTACAO\b|\bREFEICAO\b|BENEFICIO|ALELO|PLUXEE|SODEXO|TICKET|\bVR\b|FLASH|CAJU|SWILE|\bVA\b/, "vale"],
+      [/VALE ?ALIMENT|VALE ?REFEI|VOUCHER|\bALIMENTACAO\b|\bREFEICAO\b|BENEFICIO|ALELO|PLUXEE|SODEXO|TICKET|\bVR\b|FLASH|CAJU|SWILE|\bVA\b|VOLUS|VALE ?CARD|UP ?BRASIL|POLICARD|VERO ?CARD|GREEN ?CARD|NUTRICASH|GOOD ?CARD/, "vale"],
       [/\bPIX\b/, "pix"],
       [/DINHEIRO|ESPECIE/, "dinheiro"],
       [/CREDITO/, "credito"],
@@ -225,6 +232,9 @@
     // só nas linhas do cartão, para não pegar o nome da loja
     const cardLines = lines.filter(l => BENEFIT_WORDS.test(l)).join("\n");
     res.type = /MULTI ?BENEF|\bFLEX\b/.test(cardLines) ? "flex" : /REFEI/.test(cardLines) ? "refeicao" : /ALIMENTA/.test(cardLines) ? "alimentacao" : null;
+    // Titular, quando o comprovante imprime (PORTADOR / TITULAR / NOME DO PORTADOR)
+    const hm = all.match(/\b(?:NOME DO PORTADOR|PORTADOR|TITULAR)\s*:?\s*([A-Z][A-Z .']{2,40})$/m);
+    if (hm && !/CONSUMIDOR|OPERADOR|CAIXA/.test(hm[1])) res.holder = hm[1].trim().toLowerCase().replace(/(^|\s)\p{L}/gu, m => m.toUpperCase()).replace(/\b(De|Da|Do|Dos|Das|E)\b/g, m => m.toLowerCase());
     const l4 = all.match(/(?:[*X]{4}[\s.-]*){1,3}(\d{4})\b|\*{2,}\s*(\d{4})\b|FINAL\s*:?\s*(\d{4})\b|CARTAO\s*:?\s*[*X\d\s]{6,}?(\d{4})\b/);
     if (l4) res.last4 = l4[1] || l4[2] || l4[3] || l4[4];
     res.last4s = [...all.matchAll(/(?:[*X]{4}[\s.-]*){1,3}(\d{4})\b|\*{2,}\s*(\d{4})\b|FINAL\s*:?\s*(\d{4})\b/g)].map(m => m[1] || m[2] || m[3]);
@@ -245,12 +255,13 @@
     if (res.balance !== null) res.found.push("saldo");
     if (res.issuer) res.found.push("emissor");
     if (res.last4) res.found.push("final do cartão");
+    if (res.holder) res.found.push("titular");
     return res;
   }
 
   // ---------- cadastro de cartão por foto (leitor do celular) ----------
   // Foto do cartão ou print do app do emissor. Guarda só os 4 últimos dígitos do número.
-  const CARD_WORDS = /ALELO|PLUXEE|SODEXO|TICKET|FLASH|CAJU|SWILE|IFOOD|BENEF|VALE|REFEI|ALIMENT|VOUCHER|CARTAO|VALIDADE|VALID|THRU|SALDO|MASTERCARD|VISA|ELO|DEBITO|CREDITO|DISPON|EXTRATO|APP/;
+  const CARD_WORDS = /ALELO|PLUXEE|SODEXO|TICKET|FLASH|CAJU|SWILE|IFOOD|VOLUS|VALE ?CARD|UP ?BRASIL|POLICARD|VERO ?CARD|GREEN ?CARD|NUTRICASH|GOOD ?CARD|BENEF|VALE|REFEI|ALIMENT|VOUCHER|CARTAO|VALIDADE|VALID|THRU|SALDO|MASTERCARD|VISA|ELO|DEBITO|CREDITO|DISPON|EXTRATO|APP/;
   function parseCard(text) {
     const raw = String(text || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const lines = raw.map(norm);

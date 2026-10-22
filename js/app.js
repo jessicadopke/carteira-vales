@@ -7,12 +7,14 @@
     flex: { label: "Multibenefício", color: "var(--t-flex)" },
     outro: { label: "Outro voucher", color: "var(--t-outro)" },
   };
-  const ISSUERS = ["VR", "Alelo", "Pluxee (Sodexo)", "Ticket", "Flash", "Caju", "iFood Benefícios", "Swile", "Ben", "Outro"];
+  const ISSUERS = ["VR", "Alelo", "Pluxee (Sodexo)", "Ticket", "Flash", "Caju", "iFood Benefícios", "Swile", "Ben", "Volus", "Valecard", "Up Brasil", "Verocard", "Greencard", "Nutricash", "GoodCard", "Outro"];
   // Cor e sigla de cada emissor (só para reconhecer o cartão de relance; não são logotipos)
   const ISSUER_STYLE = {
     "VR": { c: "#0a8f3c", s: "VR" }, "Alelo": { c: "#5b8f00", s: "AL" }, "Pluxee (Sodexo)": { c: "#2b2a8c", s: "PX" },
     "Ticket": { c: "#c8102e", s: "TK" }, "Flash": { c: "#d6246e", s: "FL" }, "Caju": { c: "#e4572e", s: "CJ" },
-    "iFood Benefícios": { c: "#b8121f", s: "IF" }, "Swile": { c: "#5b3fd1", s: "SW" }, "Ben": { c: "#0f6fa8", s: "BN" }, "Outro": { c: "#55657a", s: "••" },
+    "iFood Benefícios": { c: "#b8121f", s: "IF" }, "Swile": { c: "#5b3fd1", s: "SW" }, "Ben": { c: "#0f6fa8", s: "BN" },
+    "Volus": { c: "#00796b", s: "VL" }, "Valecard": { c: "#e0600b", s: "VC" }, "Up Brasil": { c: "#c2410c", s: "UP" }, "Verocard": { c: "#1d4ed8", s: "VE" },
+    "Greencard": { c: "#15803d", s: "GC" }, "Nutricash": { c: "#a16207", s: "NC" }, "GoodCard": { c: "#7c3aed", s: "GD" }, "Outro": { c: "#55657a", s: "••" },
   };
   const issuerStyle = c => ISSUER_STYLE[c.issuer] || ISSUER_STYLE.Outro;
   const fold = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -20,7 +22,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.8.5";
+  const APP_VERSION = "1.9.0";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -1160,7 +1162,7 @@
       sheet.querySelectorAll(".cats button").forEach(x => x.setAttribute("aria-pressed", String(x.dataset.cat === state.cat)));
     }));
   }
-  const defaultCardId = () => S.view.name === "card" ? S.view.id : (visibleCards()[0] || sortedCards()[0]).id;
+  const defaultCardId = () => S.view.name === "card" ? S.view.id : ((visibleCards()[0] || sortedCards()[0]) || {}).id || "";
 
   function txSheet(cardId, kind = "debit") {
     const sel = cardId || defaultCardId();
@@ -1621,6 +1623,8 @@
       else if (saldoList.some(s => Math.abs(bal - s) <= 1)) { score += 50; reasons.push("saldo igual ao do cupom"); }
       if (used[c.id]) { score += Math.min(45, 15 * used[c.id]); reasons.push(used[c.id] === 1 ? "já usado nesta loja" : `usado ${used[c.id]} vezes nesta loja`); }
       if (d && d.issuer && c.issuer === d.issuer) { score += 20; reasons.push(d.issuer); }
+      // titular do cupom: basta o primeiro nome bater ("Ana" no app, "ANA PAULA SILVA" no cupom)
+      if (d && d.holder && c.holder && fold(c.holder).split(/\s+/)[0] === fold(d.holder).split(/\s+/)[0]) { score += 25; reasons.push("titular " + c.holder); }
       if (d && d.category) {
         if (d.category === "Mercado" && c.type === "alimentacao") score += 5;
         if (["Restaurante", "Lanche", "Padaria", "Delivery"].includes(d.category) && c.type === "refeicao") score += 5;
@@ -1771,7 +1775,7 @@
     const perVale = Array.isArray(d.vales) && d.vales.length === valeAmts.length ? d.vales : null;
     const parts = (valeAmts.length ? valeAmts : [0]).map((a, i) => {
       const v = perVale && perVale[i];
-      const dRow = v ? { ...d, issuer: v.issuer || null, last4: v.last4 || null, last4s: v.last4 ? [v.last4] : [] } : d;
+      const dRow = v ? { ...d, issuer: v.issuer || null, holder: v.holder || null, last4: v.last4 || null, last4s: v.last4 ? [v.last4] : [] } : d;
       const sRow = v && v.saldo !== null ? [v.saldo] : v ? [] : saldos;
       const r = rankCards(dRow, a, sRow, presetCardId).filter(x => !taken.has(x.card.id));
       const pick = r[0] && r[0].score > 0 ? r[0] : null;
@@ -1786,14 +1790,14 @@
     // nesses dois casos o app não chuta um cartão: você escolhe ou cadastra.
     // - "fraco": o cartão sugerido veio só de pistas fracas (emissor, loja); fica sugerido, com a opção de cadastrar outro.
     const unknown = parts.map((pt, i) => {
-      const v = perVale ? perVale[i] : i === 0 ? { issuer: d.issuer || null, type: d.type || null, last4: d.last4 || null, saldo: saldos.length === 1 ? saldos[0] : null } : null;
-      if (!v || (!v.issuer && !v.last4 && (v.saldo === null || v.saldo === undefined))) return null;
+      const v = perVale ? perVale[i] : i === 0 ? { issuer: d.issuer || null, issuerRaw: d.issuerRaw || null, holder: d.holder || null, type: d.type || null, last4: d.last4 || null, saldo: saldos.length === 1 ? saldos[0] : null } : null;
+      if (!v || (!v.issuer && !v.issuerRaw && !v.last4 && (v.saldo === null || v.saldo === undefined))) return null;
       if (pt.pick && pt.pick.reasons.some(r => /^final |saldo/.test(r))) return null;
       const saldo = v.saldo === undefined ? null : v.saldo;
       const lastUnknown = !!v.last4 && !S.cards.some(c => c.last4 === v.last4);
       const issuerUnknown = !!v.issuer && !S.cards.some(c => c.issuer === v.issuer);
       const saldoOff = saldo !== null && saldo >= 0 && !S.cards.some(c => Math.abs((c.balance || 0) - pt.amount - saldo) <= 1 || Math.abs((c.balance || 0) - saldo) <= 1);
-      const base = { i, issuer: v.issuer, type: v.type || null, last4: v.last4, saldo, amount: pt.amount };
+      const base = { i, issuer: v.issuer, issuerRaw: v.issuerRaw || null, holder: v.holder || null, type: v.type || null, last4: v.last4, saldo, amount: pt.amount };
       if (lastUnknown || issuerUnknown || saldoOff) {
         const weak = pt.pick && pt.pick.card;
         // "É o X?" só quando o cupom não contradiz esse cartão (outro final ou outro emissor)
@@ -1805,7 +1809,7 @@
       if (pt.pick && !pt.confident) return { ...base, kind: "fraco" };
       return null;
     }).filter(Boolean);
-    const unkLabel = u => esc([u.issuer, u.last4 ? "final " + u.last4 : ""].filter(Boolean).join(" ") || "deste cupom");
+    const unkLabel = u => esc([u.issuer || u.issuerRaw, u.last4 ? "final " + u.last4 : ""].filter(Boolean).join(" ") || "deste cupom");
     const unknownHTML = unknown.map(u => {
       const amt = u.amount ? ` (<span class="num">${brl(u.amount)}</span>)` : "";
       const text = u.kind === "novo"
@@ -1903,8 +1907,8 @@
           <div class="newcard">
             <h4>Novo cartão</h4>
             <div class="grid2">
-              <label class="field"><span>Nome do cartão</span><input id="ncName${k}" maxlength="40" value="${esc([issuer !== "Outro" ? issuer.replace(" (Sodexo)", "") : "", TYPES[type].label].filter(Boolean).join(" "))}"></label>
-              <label class="field"><span>Titular</span><input id="ncHolder${k}" maxlength="40" list="ncHolders${k}" value="${esc(S.person || "")}" placeholder="Ex.: Ana"><datalist id="ncHolders${k}">${holders().filter(Boolean).map(h => `<option value="${esc(h)}">`).join("")}</datalist></label>
+              <label class="field"><span>Nome do cartão</span><input id="ncName${k}" maxlength="40" value="${esc([issuer !== "Outro" ? issuer.replace(" (Sodexo)", "") : u.issuerRaw || "", TYPES[type].label].filter(Boolean).join(" ").slice(0, 40))}"></label>
+              <label class="field"><span>Titular</span><input id="ncHolder${k}" maxlength="40" list="ncHolders${k}" value="${esc(u.holder || S.person || "")}" placeholder="Ex.: Ana"><datalist id="ncHolders${k}">${holders().filter(Boolean).map(h => `<option value="${esc(h)}">`).join("")}</datalist></label>
             </div>
             <div class="grid2">
               <label class="field"><span>Tipo</span><select id="ncType${k}">${Object.entries(TYPES).map(([t, v]) => `<option value="${t}" ${t === type ? "selected" : ""}>${v.label}</option>`).join("")}</select></label>

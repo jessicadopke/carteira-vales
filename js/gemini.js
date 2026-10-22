@@ -7,7 +7,10 @@
   const DEFAULT_MODEL = "gemini-flash-latest";
   // Quando o modelo escolhido está sobrecarregado, sem cota ou não existe, tenta estes, nesta ordem.
   // Cada modelo tem a sua própria cota e capacidade no Google.
-  const FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-flash-lite-latest"];
+  // O gemini-2.5-flash saiu da lista em 22/10/2026: a API passou a responder 404 para ele.
+  const FALLBACK_MODELS = ["gemini-flash-lite-latest", "gemini-flash-latest"];
+  // Modelos que responderam 404 (não existem mais) nesta sessão: não são tentados de novo.
+  const gone = new Set();
   // Tempo máximo de espera pelo Gemini, somando todas as tentativas. Depois disso o app usa o leitor do celular.
   const BUDGET_MS = 30000;
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
@@ -28,7 +31,8 @@
           properties: {
             forma: { type: "STRING", enum: ["vale", "credito", "debito", "pix", "dinheiro", "outro"] },
             valor: { type: "NUMBER", description: "valor pago desta forma, em reais" },
-            emissor: { type: "STRING", nullable: true, description: "VR, Alelo, Pluxee, Sodexo, Ticket, Flash, Caju, iFood, Swile, Ben ou outro" },
+            emissor: { type: "STRING", nullable: true, description: "VR, Alelo, Pluxee, Sodexo, Ticket, Flash, Caju, iFood, Swile, Ben, Volus, Valecard, Up Brasil, Verocard, Greencard, Nutricash, GoodCard ou outro" },
+            titular: { type: "STRING", nullable: true, description: "nome do titular do cartão de benefício impresso no comprovante, se houver" },
             texto_cartao: { type: "STRING", nullable: true, description: "linha do comprovante que identifica o cartão ou a rede, copiada como está (ex.: VR BENEFICIOS VOUCHER A VISTA, ALELO REFEICAO)" },
             tipo_cartao: { type: "STRING", enum: ["alimentacao", "refeicao", "flex", "desconhecido"] },
             final_cartao: { type: "STRING", nullable: true, description: "4 últimos dígitos do cartão, se impressos" },
@@ -52,6 +56,7 @@ Extraia os dados no formato pedido. Regras:
 - "saldo": saldo disponível do cartão de benefício impresso no comprovante daquele pagamento (SALDO, SALDO DISPONIVEL, SALDO ATUAL). Nunca confunda com troco, total, desconto ou valor pago. "saldo_momento": "apos_compra" se o saldo já desconta esta compra (o normal), "antes_compra" se o comprovante diz que é o saldo anterior.
 - "emissor": a rede ou administradora do cartão de benefício, que costuma aparecer no comprovante da maquininha (ex.: "VR BENEFICIOS" → VR, "PLUXEE" → Pluxee, "ALELO REFEICAO" → Alelo). Não confunda com a adquirente da maquininha (Cielo, Rede, Stone, GetNet, PagSeguro, SiTef) nem com a bandeira de crédito. "texto_cartao": copie a linha onde o emissor aparece.
 - "tipo_cartao": alimentacao, refeicao ou flex (multibenefício) só se o comprovante disser; senão "desconhecido".
+- "titular": nome da pessoa dona do cartão, se o comprovante imprimir (PORTADOR, TITULAR, NOME). Nunca use o nome do operador de caixa, da loja ou do "CONSUMIDOR".
 - "final_cartao": só os 4 últimos dígitos, se legíveis.
 - "categoria": a que melhor descreve a loja.`;
 
@@ -125,7 +130,8 @@ Extraia os dados no formato pedido. Regras:
   // Cada tentativa fica registrada (modelo, resultado, tempo) para a tela de conferência.
   function generate(cfg, parts, schema, signal) {
     const first = cfg.model || DEFAULT_MODEL;
-    const models = [first, ...FALLBACK_MODELS.filter(m => m !== first)];
+    let models = [first, ...FALLBACK_MODELS.filter(m => m !== first)].filter(m => !gone.has(m));
+    if (!models.length) models = [first];
     const t0 = Date.now(), deadline = t0 + BUDGET_MS;
     const attempts = [];
     const ctl = new AbortController(); // cancela as tentativas que ficaram para trás
@@ -171,6 +177,7 @@ Extraia os dados no formato pedido. Regras:
           const st = e.status;
           // Outro modelo ajuda quando o problema é deste: inexistente, sem cota, sobrecarregado ou resposta estranha.
           // Chave recusada ou foto recusada: não adianta insistir.
+          if (st === 404) gone.add(model);
           if (st === 404 || st === 429 || st >= 500 || st === 0) launch();
           else giveUp(e);
         });
@@ -208,15 +215,21 @@ Extraia os dados no formato pedido. Regras:
   const ISSUER_NAMES = [
     [/alelo/i, "Alelo"], [/pluxee|sodexo/i, "Pluxee (Sodexo)"], [/ticket/i, "Ticket"], [/\bvr\b|vr ?benef/i, "VR"],
     [/flash/i, "Flash"], [/caju/i, "Caju"], [/ifood/i, "iFood Benefícios"], [/swile/i, "Swile"], [/\bben\b/i, "Ben"],
+    [/volus/i, "Volus"], [/vale ?card/i, "Valecard"], [/up ?brasil|policard/i, "Up Brasil"], [/vero ?card/i, "Verocard"],
+    [/green ?card/i, "Greencard"], [/nutricash/i, "Nutricash"], [/good ?card/i, "GoodCard"],
   ];
   // "CARLA DE SOUZA" → "Carla de Souza"
   const nameCase = s => s.toLowerCase().replace(/(^|\s)\p{L}/gu, m => m.toUpperCase()).replace(/\b(De|Da|Do|Dos|Das|E)\b/g, m => m.toLowerCase());
   const issuerOf = s => { if (!s) return null; for (const [re, n] of ISSUER_NAMES) if (re.test(s)) return n; return null; };
+  // Emissor fora da lista do app: guarda o nome lido, para usar no nome do cartão novo
+  const rawIssuer = s => { const t = String(s || "").trim(); return t && !/^(outro|null|desconhecido)$/i.test(t) && !issuerOf(t) ? t.slice(0, 24) : null; };
+  // Nome do titular: só letras, de 2 a 40 caracteres
+  const holderOf = s => { const t = String(s || "").replace(/\s+/g, " ").trim(); return /^[\p{L} .'-]{2,40}$/u.test(t) && !/consumidor|operador|caixa/i.test(t) ? nameCase(t) : null; };
 
   // Converte a resposta do Gemini para o formato de ReceiptReader.parse()
   function toParsed(j) {
     const pays = (Array.isArray(j.pagamentos) ? j.pagamentos : [])
-      .map(p => ({ kind: ["vale", "credito", "debito", "pix", "dinheiro", "outro"].includes(p.forma) ? p.forma : "outro", amount: cents(p.valor), issuer: issuerOf(p.emissor) || issuerOf(p.texto_cartao), type: ["alimentacao", "refeicao", "flex"].includes(p.tipo_cartao) ? p.tipo_cartao : null, last4: /^\d{4}$/.test(String(p.final_cartao || "")) ? String(p.final_cartao) : null, saldo: cents(p.saldo), moment: p.saldo_momento }))
+      .map(p => ({ kind: ["vale", "credito", "debito", "pix", "dinheiro", "outro"].includes(p.forma) ? p.forma : "outro", amount: cents(p.valor), issuer: issuerOf(p.emissor) || issuerOf(p.texto_cartao), issuerRaw: rawIssuer(p.emissor), holder: holderOf(p.titular), type: ["alimentacao", "refeicao", "flex"].includes(p.tipo_cartao) ? p.tipo_cartao : null, last4: /^\d{4}$/.test(String(p.final_cartao || "")) ? String(p.final_cartao) : null, saldo: cents(p.saldo), moment: p.saldo_momento }))
       .filter(p => p.amount > 0);
     const vales = pays.filter(p => p.kind === "vale");
     // saldos impressos sempre como "depois da compra"
@@ -232,12 +245,14 @@ Extraia os dados no formato pedido. Regras:
       paid: vales.length ? vales.reduce((s, p) => s + p.amount, 0) : null,
       payments: pays.map(p => ({ kind: p.kind, amount: p.amount })),
       // pistas de cada vale, na mesma ordem dos pagamentos "vale"
-      vales: vales.map(p => ({ amount: p.amount, issuer: p.issuer, type: p.type, last4: p.last4, saldo: p.saldo === null ? null : p.moment === "antes_compra" ? p.saldo - p.amount : p.saldo })),
+      vales: vales.map(p => ({ amount: p.amount, issuer: p.issuer, issuerRaw: p.issuer ? null : p.issuerRaw, holder: p.holder, type: p.type, last4: p.last4, saldo: p.saldo === null ? null : p.moment === "antes_compra" ? p.saldo - p.amount : p.saldo })),
       balances,
       balance: balances.length === 1 ? balances[0] : null,
       balanceMoment: "apos_compra",
       issuer: vales.length === 1 ? vales[0].issuer : null,
       type: vales.length === 1 ? vales[0].type : null,
+      issuerRaw: vales.length === 1 && !vales[0].issuer ? vales[0].issuerRaw : null,
+      holder: vales.length === 1 ? vales[0].holder : null,
       last4: vales.length === 1 ? vales[0].last4 : null,
       last4s: vales.map(p => p.last4).filter(Boolean),
       category: CATS.includes(j.categoria) ? j.categoria : null,
@@ -250,6 +265,7 @@ Extraia os dados no formato pedido. Regras:
     if (balances.length) res.found.push("saldo");
     if (vales.some(p => p.issuer)) res.found.push("emissor");
     if (res.last4s.length) res.found.push("final do cartão");
+    if (vales.some(p => p.holder)) res.found.push("titular");
     if (pays.some(p => p.kind !== "vale")) res.found.push("outras formas de pagamento");
     return res;
   }
@@ -267,7 +283,7 @@ Extraia os dados no formato pedido. Regras:
     type: "OBJECT",
     properties: {
       tipo_imagem: { type: "STRING", enum: ["cartao", "app", "outro"], description: "cartao = foto do cartão físico; app = print/foto da tela do app do emissor" },
-      emissor: { type: "STRING", nullable: true, description: "VR, Alelo, Pluxee, Sodexo, Ticket, Flash, Caju, iFood, Swile, Ben ou outro" },
+      emissor: { type: "STRING", nullable: true, description: "VR, Alelo, Pluxee, Sodexo, Ticket, Flash, Caju, iFood, Swile, Ben, Volus, Valecard, Up Brasil, Verocard, Greencard, Nutricash, GoodCard ou outro" },
       tipo: { type: "STRING", enum: ["alimentacao", "refeicao", "flex", "outro"] },
       titular: { type: "STRING", nullable: true, description: "nome da pessoa impresso no cartão ou mostrado no app" },
       final_cartao: { type: "STRING", nullable: true, description: "SOMENTE os 4 últimos dígitos do número do cartão" },
@@ -275,7 +291,7 @@ Extraia os dados no formato pedido. Regras:
     },
     required: ["tipo_imagem", "tipo"],
   };
-  const CARD_PROMPT = `A imagem é a foto de um cartão de benefício brasileiro (vale-alimentação, vale-refeição, multibenefício: VR, Alelo, Pluxee/Sodexo, Ticket, Flash, Caju, iFood Benefícios, Swile, Ben etc.) ou um print da tela do app do emissor.
+  const CARD_PROMPT = `A imagem é a foto de um cartão de benefício brasileiro (vale-alimentação, vale-refeição, multibenefício: VR, Alelo, Pluxee/Sodexo, Ticket, Flash, Caju, iFood Benefícios, Swile, Ben, Volus, Valecard, Up Brasil etc.) ou um print da tela do app do emissor.
 Extraia os dados no formato pedido. Regras:
 - NUNCA devolva o número completo do cartão nem o código de segurança. Em "final_cartao", só os 4 últimos dígitos.
 - "tipo": alimentacao (vale-alimentação, mercado), refeicao (vale-refeição, restaurante), flex (multibenefício com carteiras) ou outro.
