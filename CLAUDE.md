@@ -55,7 +55,7 @@ Depois do APROVADO do verificador e dos testes passando, o gerente abre o pedido
 Sigo com A. Se preferir outra, responda aqui até <data + 48 h>.
 ```
 
-**Bloqueios (param só aquele item):** adicione `precisa-de-você`, mova o cartão para **⏸ Precisa de você**, explique em 3 linhas o que precisa e passe para o próximo item. Só nestes casos:
+**Bloqueios (param só aquele item):** adicione `precisa-de-você`, atribua a issue a `jessicadopke` (`gh issue edit <n> --add-assignee jessicadopke`; retire a atribuição quando ela responder), mova o cartão para **⏸ Precisa de você**, explique em 3 linhas o que precisa e passe para o próximo item. Só nestes casos:
 - publicar (`dev → main`), criar repositório, conta, chave ou credencial;
 - apagar dados, arquivos ou issues que não foram criados nesta mesma tarefa;
 - gastar dinheiro ou ativar faturamento;
@@ -72,6 +72,8 @@ gh project item-edit 1 --owner jessicadopke --url <URL da issue> --field Status 
 Colunas: `Backlog` · `Especificando` · `Em desenvolvimento` · `Verificando` · `⏸ Precisa de você` · `Pronto para publicar` · `Publicado`. Issue nova entra no quadro com `gh project item-add 1 --owner jessicadopke --url <URL>`.
 No PC o `gh` fica em `%LOCALAPPDATA%\Programs\gh\bin\gh.exe` (fora do PATH).
 Se o `gh` não estiver disponível (execução na nuvem), registre o andamento como comentário na issue; a próxima sessão no PC acerta o quadro.
+
+**Aviso no celular:** os agentes agem com a conta da Jéssica, então o GitHub não a notifica. O aviso é a mensagem final da execução agendada (o app do Claude manda ao celular): comece por "⏸ Precisa de você: …" quando houver bloqueio novo, senão "Sem pendências para você".
 
 **Relatório:** ao terminar cada etapa, comente na issue em até 5 linhas (o que foi feito, link do ramo/pedido, próximo passo). Ao fim da execução, atualize o corpo da issue fixada **📊 Resumo dos agentes** deste repositório: data, itens concluídos, itens em ⏸ (há quantos dias), decisões que vencem nas próximas 48 h, decisões que viraram definitivas.
 
