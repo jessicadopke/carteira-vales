@@ -5,7 +5,7 @@ O que falta fazer no app, em ordem de prioridade. Quando um item fica pronto, el
 **Tipos:** 🐞 defeito · 🔧 manutenção (não muda o app para quem usa) · ✨ função nova · 🧪 validação.
 **Tamanho:** P (até 1 hora), M (algumas horas), G (um dia ou mais).
 
-*Atualizado em 21/10/2026, versão 1.8.5.*
+*Atualizado em 22/10/2026, versão 1.9.0.*
 
 ## Agora
 
@@ -15,6 +15,7 @@ O que falta fazer no app, em ordem de prioridade. Quando um item fica pronto, el
 | B-02 | Testar no celular as funções da 1.8.x | 🧪 | P |
 | B-03 | Ler o final do cartão no formato `************4321` | 🐞 | P |
 | B-04 | Pôr o código no git e publicar por `git push` | 🔧 | M |
+| B-14 | Campos do cadastro de cartão desalinhados | 🐞 | M |
 
 ### B-01 · Descobrir por que o Gemini não foi usado no celular
 Na 1.8.2, a leitura demorou e no fim o app usou o leitor do celular. A 1.8.3 mostra **Como foi lido** na conferência, com cada tentativa do Gemini (modelo, erro e tempo).
@@ -26,7 +27,7 @@ Na 1.8.2, a leitura demorou e no fim o app usou o leitor do celular. A 1.8.3 mos
 ### B-02 · Testar no celular as funções da 1.8.x
 Até agora, tudo foi testado no computador, com o Gemini simulado e fotos geradas.
 - [ ] "Ler cupom" abre a câmera traseira.
-- [ ] Gemini lê um cupom real; "Como foi lido" mostra o tempo.
+- [x] Gemini lê um cupom real; "Como foi lido" mostra o tempo (21 e 22/10/2026).
 - [ ] Cupom pago com cartão que não está na carteira: aparece o aviso e "Cadastrar agora" funciona.
 - [ ] Cadastro de cartão por foto (frente do cartão) e por print do app do emissor.
 - [ ] Atualizar pelo app (Ajustes → Sobre o app).
@@ -42,6 +43,13 @@ Hoje a pasta local não tem git, e as versões sobem arquivo por arquivo pela p�
 - Fazer o login do GitHub no terminal uma vez (quem faz é a Jessica).
 - Atualizar a seção "Versões" do README com o passo a passo novo.
 - **Pronto quando:** uma versão for publicada só com `git push` e a release criada a partir da tag.
+
+### B-14 · Campos do cadastro de cartão desalinhados
+No formulário **Novo cartão** da conferência, o rótulo "Saldo depois desta compra" quebra em duas linhas, e a caixa de saldo fica mais baixa que a do "Final do cartão", ao lado.
+- Alinhar as caixas de cada linha pela base, ou encurtar o rótulo (por exemplo, "Saldo após a compra").
+- Revisar os outros formulários em duas colunas, numa tela estreita (360 px) e com a fonte do Android aumentada.
+- Incluir a revisão de acessibilidade, que estava em Ideias: contraste, tamanho das áreas de toque e rótulos para o leitor de tela.
+- **Pronto quando:** os campos lado a lado ficarem alinhados em 360 px e com fonte grande, e a revisão de acessibilidade estiver registrada no CHANGELOG.
 
 ## Próximas
 
@@ -71,7 +79,7 @@ São 2.300 linhas num arquivo só, com um estado global único.
 - **Depende de:** B-05, para mudar com segurança.
 
 ### B-07 · Lista de emissores num lugar só
-Os nomes dos emissores (VR, Alelo, Pluxee, Ticket…) e as regras para reconhecê-los estão repetidos em `app.js`, `receipt.js` e `gemini.js`. Um emissor novo precisa entrar nos três.
+Os nomes dos emissores (VR, Alelo, Pluxee, Ticket…) e as regras para reconhecê-los estão repetidos em `app.js`, `receipt.js` e `gemini.js`. Um emissor novo precisa entrar nos três. Na 1.9.0 entraram Volus, Valecard, Up Brasil, Verocard, Greencard, Nutricash e GoodCard, ainda nos três arquivos.
 
 ### B-08 · Corrigir a release v1.8.2
 A tag aponta para o commit dos arquivos `js`, um commit antes de `version.json`, `sw.js` e CHANGELOG.
@@ -100,5 +108,4 @@ Ainda sem prioridade. Cada uma precisa ser conversada antes de virar item.
 - **Exportar o extrato em planilha (CSV)**, com filtro por cartão, titular e período.
 - **Backup direto no Google Drive**, em vez de baixar o arquivo e subir à mão.
 - **Uso em dois celulares:** sincronizar a carteira entre aparelhos, por exemplo pelo Drive. É grande, porque hoje tudo foi pensado para um celular só.
-- **Revisão de acessibilidade:** contraste, tamanho das áreas de toque e leitor de tela.
 - **Apagar o artefato antigo** (`ciclo/_artefato-claude-antigo`) quando o app estiver instalado e em uso no celular.

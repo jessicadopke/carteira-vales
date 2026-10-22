@@ -10,6 +10,17 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
 A versão em uso aparece em **Ajustes**, no rodapé.
 
+## 1.9.0 — 22/10/2026
+
+### Novo
+- **Mais emissores de cartão:** Volus, Valecard, Up Brasil (ex-Policard), Verocard, Greencard, Nutricash e GoodCard, no cadastro e na leitura de cupons e cartões (Gemini e leitor do celular).
+- Quando o emissor lido no cupom não está na lista, o nome dele vai para o **Nome do cartão** do cartão novo, mesmo com o emissor em "Outro".
+- **Titular do cartão no cupom:** se o comprovante imprimir o nome do titular, ele preenche o **Titular** do cartão novo e ajuda a identificar o cartão cadastrado (basta o primeiro nome bater).
+
+### Corrigido
+- **Modelos de reserva do Gemini:** o `gemini-2.5-flash` deixou de existir na API (erro 404). A reserva agora é o `gemini-flash-lite-latest`, e um modelo que dá 404 não é tentado de novo até o app ser reaberto.
+- A tela de conferência do cupom falhava com a carteira vazia, e a leitura caía no leitor do celular.
+
 ## 1.8.5 — 21/10/2026
 
 ### Corrigido
