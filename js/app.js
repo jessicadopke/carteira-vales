@@ -20,7 +20,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.8.3";
+  const APP_VERSION = "1.8.4";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 

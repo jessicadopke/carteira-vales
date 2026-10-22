@@ -82,55 +82,97 @@ Extraia os dados no formato pedido. Regras:
     }
   }
 
-  // Ler um cupom não precisa de "raciocínio" longo: desligá-lo deixa a resposta bem mais rápida.
-  // O Gemini 2.5 usa thinkingBudget; os modelos mais novos usam thinkingLevel.
-  const noThinking = new Set(); // modelos que recusaram a configuração de raciocínio
-  const thinkingFor = model => /gemini-2\.5-flash/.test(model) ? { thinkingBudget: 0 } : /gemini-[12]\./.test(model) ? null : { thinkingLevel: "low" };
+  // Ler um cupom não precisa de "raciocínio": quanto menos o modelo pensa, mais rápido responde.
+  // O Gemini 2.5 usa thinkingBudget (0 desliga). Os modelos mais novos usam thinkingLevel: os Flash aceitam
+  // "minimal"; os Pro, no mínimo "low". Se o modelo recusar um nível, o app tenta o próximo da lista.
+  const LEVELS = ["minimal", "low", null];
+  const levelOf = {}; // modelo → índice em LEVELS que ele aceitou (ou o próximo a tentar)
+  function thinkingFor(model) {
+    if (/gemini-2\.5-flash/.test(model)) return levelOf[model] ? null : { thinkingBudget: 0 };
+    if (/gemini-[12]\./.test(model)) return null;
+    const i = levelOf[model] ?? (/pro/.test(model) ? 1 : 0);
+    return LEVELS[i] ? { thinkingLevel: LEVELS[i] } : null;
+  }
+  const nextThinking = model => { levelOf[model] = /gemini-2\.5-flash/.test(model) ? LEVELS.length - 1 : (levelOf[model] ?? (/pro/.test(model) ? 1 : 0)) + 1; };
 
-  // Tenta o modelo escolhido e, se ele falhar por sobrecarga, cota ou modelo inexistente, os de reserva,
-  // sem passar de BUDGET_MS no total. Cada tentativa fica registrada (modelo, resultado, tempo) para a tela de conferência.
-  async function generate(cfg, parts, schema, signal) {
-    const first = cfg.model || DEFAULT_MODEL;
-    const models = [first, ...FALLBACK_MODELS.filter(m => m !== first)];
-    const deadline = Date.now() + BUDGET_MS;
-    const attempts = [];
-    const fail = e => { e.attempts = attempts; return e; };
-    let lastErr = null;
-    for (const model of models) {
-      const left = deadline - Date.now();
-      if (left < 3000) break;
-      const t0 = Date.now();
+  // Se o modelo escolhido não responder em HEDGE_MS, o próximo da reserva começa em paralelo e vale a primeira
+  // resposta que chegar. Erro de sobrecarga, cota ou modelo inexistente passa logo para o próximo.
+  const HEDGE_MS = 12000;
+
+  // Uma tentativa num modelo, repetindo com menos exigência de raciocínio se ele recusar a configuração.
+  async function attempt(key, model, parts, schema, signal, deadline) {
+    for (;;) {
       const generationConfig = { temperature: 0, responseMimeType: "application/json", responseSchema: schema };
-      const th = !noThinking.has(model) && thinkingFor(model);
+      const th = thinkingFor(model);
       if (th) generationConfig.thinkingConfig = th;
       const body = { contents: [{ role: "user", parts }], generationConfig };
-      try {
-        let out;
-        try { out = await call(cfg.key, model, body, signal, left); }
-        catch (e) {
-          // modelo que não aceita a configuração de raciocínio: repete sem ela
-          if (e.status === 400 && th && /think/i.test(e.message)) {
-            noThinking.add(model);
-            delete generationConfig.thinkingConfig;
-            out = await call(cfg.key, model, body, signal, Math.max(1000, deadline - Date.now()));
-          } else throw e;
-        }
-        const text = (((out.candidates || [])[0] || {}).content || {}).parts?.map(p => p.thought ? "" : p.text || "").join("") || "";
-        let json;
-        try { json = JSON.parse(text); } catch (e) { const err = new Error("resposta fora do formato"); err.status = 0; err.raw = text; throw err; }
-        attempts.push({ model, ok: true, ms: Date.now() - t0 });
-        return { json, model, attempts };
-      } catch (e) {
-        lastErr = e;
-        attempts.push({ model, ok: false, status: e.name === "TimeoutError" ? "tempo esgotado" : e.status || e.name || "erro", msg: String(e.message || "").slice(0, 160), ms: Date.now() - t0 });
-        console.warn("gemini", model, e.status, e.message);
-        // Outro modelo só ajuda quando o problema é deste: inexistente, sem cota ou sobrecarregado.
-        // Tempo esgotado, chave recusada, foto recusada: não adianta insistir.
-        const st = e.status;
-        if (e.name === "TimeoutError" || !(st === 404 || st === 429 || st >= 500)) throw fail(e);
+      let out;
+      try { out = await call(key, model, body, signal, Math.max(1000, deadline - Date.now())); }
+      catch (e) {
+        if (e.status === 400 && th && /think/i.test(e.message)) { nextThinking(model); continue; }
+        throw e;
       }
+      const text = (((out.candidates || [])[0] || {}).content || {}).parts?.map(p => p.thought ? "" : p.text || "").join("") || "";
+      try { return JSON.parse(text); } catch (e) { const err = new Error("resposta fora do formato"); err.status = 0; err.raw = text; throw err; }
     }
-    throw fail(lastErr || Object.assign(new Error("tempo esgotado"), { name: "TimeoutError", status: 0 }));
+  }
+
+  // Tenta o modelo escolhido e os de reserva (ver HEDGE_MS), sem passar de BUDGET_MS no total.
+  // Cada tentativa fica registrada (modelo, resultado, tempo) para a tela de conferência.
+  function generate(cfg, parts, schema, signal) {
+    const first = cfg.model || DEFAULT_MODEL;
+    const models = [first, ...FALLBACK_MODELS.filter(m => m !== first)];
+    const t0 = Date.now(), deadline = t0 + BUDGET_MS;
+    const attempts = [];
+    const ctl = new AbortController(); // cancela as tentativas que ficaram para trás
+    const stopAll = () => ctl.abort();
+    if (signal) { if (signal.aborted) ctl.abort(); else signal.addEventListener("abort", stopAll, { once: true }); }
+
+    return new Promise((resolve, reject) => {
+      let next = 0, running = 0, done = false, lastErr = null, hedge = null;
+      const finish = (fn, v) => {
+        if (done) return;
+        done = true;
+        clearTimeout(hedge);
+        ctl.abort();
+        if (signal) signal.removeEventListener("abort", stopAll);
+        // tentativas ainda em andamento entram no registro como canceladas
+        attempts.forEach(a => { if (a.ok === undefined) Object.assign(a, { ok: false, status: "cancelado", ms: Date.now() - a.t }); delete a.t; });
+        fn(v);
+      };
+      const giveUp = e => { e.attempts = attempts; finish(reject, e); };
+      const launch = () => {
+        if (done) return;
+        clearTimeout(hedge);
+        if (next >= models.length || deadline - Date.now() < 3000) {
+          if (!running) giveUp(lastErr || Object.assign(new Error("tempo esgotado"), { name: "TimeoutError", status: 0 }));
+          return;
+        }
+        const model = models[next++];
+        const rec = { model, t: Date.now() };
+        attempts.push(rec);
+        running++;
+        if (next < models.length) hedge = setTimeout(launch, HEDGE_MS);
+        attempt(cfg.key, model, parts, schema, ctl.signal, deadline).then(json => {
+          running--;
+          Object.assign(rec, { ok: true, ms: Date.now() - rec.t });
+          finish(resolve, { json, model, attempts });
+        }, e => {
+          running--;
+          if (done) return;
+          lastErr = e;
+          Object.assign(rec, { ok: false, status: e.name === "TimeoutError" ? "tempo esgotado" : e.status || e.name || "erro", msg: String(e.message || "").slice(0, 160), ms: Date.now() - rec.t });
+          console.warn("gemini", model, e.status, e.message);
+          if (e.name === "AbortError") return giveUp(e);
+          const st = e.status;
+          // Outro modelo ajuda quando o problema é deste: inexistente, sem cota, sobrecarregado ou resposta estranha.
+          // Chave recusada ou foto recusada: não adianta insistir.
+          if (st === 404 || st === 429 || st >= 500 || st === 0) launch();
+          else giveUp(e);
+        });
+      };
+      launch();
+    });
   }
 
   // "gemini-flash-latest: 503 (2,1 s) · gemini-2.5-flash: ok (6,4 s)"
