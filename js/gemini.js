@@ -29,6 +29,8 @@
             forma: { type: "STRING", enum: ["vale", "credito", "debito", "pix", "dinheiro", "outro"] },
             valor: { type: "NUMBER", description: "valor pago desta forma, em reais" },
             emissor: { type: "STRING", nullable: true, description: "VR, Alelo, Pluxee, Sodexo, Ticket, Flash, Caju, iFood, Swile, Ben ou outro" },
+            texto_cartao: { type: "STRING", nullable: true, description: "linha do comprovante que identifica o cartão ou a rede, copiada como está (ex.: VR BENEFICIOS VOUCHER A VISTA, ALELO REFEICAO)" },
+            tipo_cartao: { type: "STRING", enum: ["alimentacao", "refeicao", "flex", "desconhecido"] },
             final_cartao: { type: "STRING", nullable: true, description: "4 últimos dígitos do cartão, se impressos" },
             saldo: { type: "NUMBER", nullable: true, description: "saldo do cartão de benefício impresso no comprovante, em reais" },
             saldo_momento: { type: "STRING", enum: ["apos_compra", "antes_compra", "desconhecido"] },
@@ -48,6 +50,8 @@ Extraia os dados no formato pedido. Regras:
 - "pagamentos": uma linha para cada forma de pagamento usada na compra (seção "FORMA DE PAGAMENTO" da NFC-e e/ou comprovantes da maquininha). Não repita a mesma parte só porque aparece na NFC-e e no comprovante.
 - forma "vale" para cartões de benefício: vale-alimentação, vale-refeição, voucher, multibenefício (VR, Alelo, Pluxee/Sodexo, Ticket, Flash, Caju, iFood Benefícios, Swile, Ben etc.). "credito"/"debito" só para cartões bancários comuns.
 - "saldo": saldo disponível do cartão de benefício impresso no comprovante daquele pagamento (SALDO, SALDO DISPONIVEL, SALDO ATUAL). Nunca confunda com troco, total, desconto ou valor pago. "saldo_momento": "apos_compra" se o saldo já desconta esta compra (o normal), "antes_compra" se o comprovante diz que é o saldo anterior.
+- "emissor": a rede ou administradora do cartão de benefício, que costuma aparecer no comprovante da maquininha (ex.: "VR BENEFICIOS" → VR, "PLUXEE" → Pluxee, "ALELO REFEICAO" → Alelo). Não confunda com a adquirente da maquininha (Cielo, Rede, Stone, GetNet, PagSeguro, SiTef) nem com a bandeira de crédito. "texto_cartao": copie a linha onde o emissor aparece.
+- "tipo_cartao": alimentacao, refeicao ou flex (multibenefício) só se o comprovante disser; senão "desconhecido".
 - "final_cartao": só os 4 últimos dígitos, se legíveis.
 - "categoria": a que melhor descreve a loja.`;
 
@@ -212,7 +216,7 @@ Extraia os dados no formato pedido. Regras:
   // Converte a resposta do Gemini para o formato de ReceiptReader.parse()
   function toParsed(j) {
     const pays = (Array.isArray(j.pagamentos) ? j.pagamentos : [])
-      .map(p => ({ kind: ["vale", "credito", "debito", "pix", "dinheiro", "outro"].includes(p.forma) ? p.forma : "outro", amount: cents(p.valor), issuer: issuerOf(p.emissor), last4: /^\d{4}$/.test(String(p.final_cartao || "")) ? String(p.final_cartao) : null, saldo: cents(p.saldo), moment: p.saldo_momento }))
+      .map(p => ({ kind: ["vale", "credito", "debito", "pix", "dinheiro", "outro"].includes(p.forma) ? p.forma : "outro", amount: cents(p.valor), issuer: issuerOf(p.emissor) || issuerOf(p.texto_cartao), type: ["alimentacao", "refeicao", "flex"].includes(p.tipo_cartao) ? p.tipo_cartao : null, last4: /^\d{4}$/.test(String(p.final_cartao || "")) ? String(p.final_cartao) : null, saldo: cents(p.saldo), moment: p.saldo_momento }))
       .filter(p => p.amount > 0);
     const vales = pays.filter(p => p.kind === "vale");
     // saldos impressos sempre como "depois da compra"
@@ -228,11 +232,12 @@ Extraia os dados no formato pedido. Regras:
       paid: vales.length ? vales.reduce((s, p) => s + p.amount, 0) : null,
       payments: pays.map(p => ({ kind: p.kind, amount: p.amount })),
       // pistas de cada vale, na mesma ordem dos pagamentos "vale"
-      vales: vales.map(p => ({ amount: p.amount, issuer: p.issuer, last4: p.last4, saldo: p.saldo === null ? null : p.moment === "antes_compra" ? p.saldo - p.amount : p.saldo })),
+      vales: vales.map(p => ({ amount: p.amount, issuer: p.issuer, type: p.type, last4: p.last4, saldo: p.saldo === null ? null : p.moment === "antes_compra" ? p.saldo - p.amount : p.saldo })),
       balances,
       balance: balances.length === 1 ? balances[0] : null,
       balanceMoment: "apos_compra",
       issuer: vales.length === 1 ? vales[0].issuer : null,
+      type: vales.length === 1 ? vales[0].type : null,
       last4: vales.length === 1 ? vales[0].last4 : null,
       last4s: vales.map(p => p.last4).filter(Boolean),
       category: CATS.includes(j.categoria) ? j.categoria : null,

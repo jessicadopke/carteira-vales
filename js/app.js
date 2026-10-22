@@ -20,7 +20,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.8.4";
+  const APP_VERSION = "1.8.5";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -1786,14 +1786,14 @@
     // nesses dois casos o app não chuta um cartão: você escolhe ou cadastra.
     // - "fraco": o cartão sugerido veio só de pistas fracas (emissor, loja); fica sugerido, com a opção de cadastrar outro.
     const unknown = parts.map((pt, i) => {
-      const v = perVale ? perVale[i] : i === 0 ? { issuer: d.issuer || null, last4: d.last4 || null, saldo: saldos.length === 1 ? saldos[0] : null } : null;
+      const v = perVale ? perVale[i] : i === 0 ? { issuer: d.issuer || null, type: d.type || null, last4: d.last4 || null, saldo: saldos.length === 1 ? saldos[0] : null } : null;
       if (!v || (!v.issuer && !v.last4 && (v.saldo === null || v.saldo === undefined))) return null;
       if (pt.pick && pt.pick.reasons.some(r => /^final |saldo/.test(r))) return null;
       const saldo = v.saldo === undefined ? null : v.saldo;
       const lastUnknown = !!v.last4 && !S.cards.some(c => c.last4 === v.last4);
       const issuerUnknown = !!v.issuer && !S.cards.some(c => c.issuer === v.issuer);
       const saldoOff = saldo !== null && saldo >= 0 && !S.cards.some(c => Math.abs((c.balance || 0) - pt.amount - saldo) <= 1 || Math.abs((c.balance || 0) - saldo) <= 1);
-      const base = { i, issuer: v.issuer, last4: v.last4, saldo, amount: pt.amount };
+      const base = { i, issuer: v.issuer, type: v.type || null, last4: v.last4, saldo, amount: pt.amount };
       if (lastUnknown || issuerUnknown || saldoOff) {
         const weak = pt.pick && pt.pick.card;
         // "É o X?" só quando o cupom não contradiz esse cartão (outro final ou outro emissor)
@@ -1896,7 +1896,7 @@
       const cancel = e.target.closest("[data-nccancel]");
       if (open) {
         const u = unknown.find(x => x.i === +open.dataset.newcard);
-        const type = typeFromCat[state.cat] || "alimentacao";
+        const type = u.type && TYPES[u.type] ? u.type : typeFromCat[state.cat] || "alimentacao";
         const issuer = u.issuer && ISSUERS.includes(u.issuer) ? u.issuer : "Outro";
         const k = u.i;
         $("ncBox" + k).innerHTML = `

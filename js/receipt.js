@@ -221,6 +221,10 @@
     const cn = all.match(/CNPJ[^\d\n]{0,8}(\d{2}\.?\d{3}\.?\d{3}\s?\/?\s?\d{4}\s?-?\s?\d{2})/);
     if (cn) { const digits = cn[1].replace(/\D/g, ""); if (digits.length === 14) res.cnpj = digits; }
     for (const [re, name] of ISSUER_RULES) if (re.test(all)) { res.issuer = name; break; }
+    // Tipo do cartão, quando o comprovante diz (ex.: "ALELO REFEICAO", "VR ALIMENTACAO"),
+    // só nas linhas do cartão, para não pegar o nome da loja
+    const cardLines = lines.filter(l => BENEFIT_WORDS.test(l)).join("\n");
+    res.type = /MULTI ?BENEF|\bFLEX\b/.test(cardLines) ? "flex" : /REFEI/.test(cardLines) ? "refeicao" : /ALIMENTA/.test(cardLines) ? "alimentacao" : null;
     const l4 = all.match(/(?:[*X]{4}[\s.-]*){1,3}(\d{4})\b|\*{2,}\s*(\d{4})\b|FINAL\s*:?\s*(\d{4})\b|CARTAO\s*:?\s*[*X\d\s]{6,}?(\d{4})\b/);
     if (l4) res.last4 = l4[1] || l4[2] || l4[3] || l4[4];
     res.last4s = [...all.matchAll(/(?:[*X]{4}[\s.-]*){1,3}(\d{4})\b|\*{2,}\s*(\d{4})\b|FINAL\s*:?\s*(\d{4})\b/g)].map(m => m[1] || m[2] || m[3]);
