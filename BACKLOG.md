@@ -28,14 +28,23 @@ Só a Jessica pode fazer, no celular. O resto foi testado no computador, com o G
 
 | # | Item | Tipo | Tam. |
 |---|------|------|------|
+| B-20 | Backup automático no Google Drive (Apps Script) | ✨ | M |
 | B-17 | Exportar o extrato em planilha (CSV) | ✨ | P |
 | B-18 | Apagar o artefato antigo do Claude | 🔧 | P |
 | B-19 | Gráficos de gastos por período | ✨ | M |
-| B-20 | Backup direto no Google Drive | ✨ | M |
 | B-21 | Aviso do dia do crédito | ✨ | M |
 | B-22 | Recorte automático da foto do cupom | ✨ | M |
 | B-06 | Dividir o `app.js` em módulos | 🔧 | G |
-| B-23 | Usar a carteira em dois celulares | ✨ | G |
+| B-23 | Sincronizar com uma Planilha Google (dois celulares) | ✨ | G |
+
+### B-20 · Backup automático no Google Drive (Apps Script)
+Hoje o backup é um arquivo baixado no celular, que precisa ser guardado à mão. Se o celular for perdido ou formatado sem backup recente, os dados vão junto. É a primeira etapa para tirar os dados só do celular; a segunda é o B-23.
+- **Como:** um Apps Script na conta Google da Jessica, publicado como App da Web ("Executar como: eu"), recebe o backup do app e grava numa pasta "Ciclo – backups" do Drive dela. O app continua rodando no celular; o script só é chamado ao salvar ou restaurar.
+- **Configuração (Jessica, uma vez):** criar o script em script.google.com com o código pronto, publicar, autorizar e colar no Ciclo (Ajustes) o link do script. O app gera um código secreto que vai junto em cada envio; o link e o código ficam só no celular, fora do backup.
+- **No app:** botões **Salvar no Drive** e **Restaurar do Drive** em Ajustes, com a lista dos backups (data e tamanho). Com o Drive ligado, o app salva sozinho ao ser aberto quando o último backup tiver mais de 7 dias ou houver 30 lançamentos novos, e o lembrete de backup some.
+- **Fotos dos cupons:** o backup sem fotos é o padrão (pequeno). Com fotos, só se couber no limite do Apps Script; senão o app avisa.
+- **Segurança:** o cofre já vai criptografado no backup. Quem tiver o link e o código secreto lê e grava os backups; por isso eles não saem do celular.
+- **Pronto quando:** o backup automático aparecer no Drive e for restaurado noutro navegador com todos os dados.
 
 ### B-17 · Exportar o extrato em planilha (CSV)
 Hoje os dados só saem pelo backup (arquivo JSON), que não abre numa planilha.
@@ -57,13 +66,6 @@ Hoje o período mostra só totais (saldo no início, créditos, gastos e saldo a
 - Desenhar em SVG no próprio app, sem biblioteca de fora, para continuar funcionando sem internet.
 - **Pronto quando:** os gráficos aparecerem no período, nos temas claro e escuro e numa tela de 360 px, com os totais batendo com o extrato.
 
-### B-20 · Backup direto no Google Drive
-Hoje o backup é um arquivo baixado no celular, que precisa ser guardado à mão.
-- Botão **Salvar no Google Drive** e **Restaurar do Drive** em Ajustes, usando a pasta reservada do app no Drive (o app não vê os outros arquivos).
-- Exige criar um projeto no Google Cloud com uma credencial OAuth para o site `jessicadopke.github.io`. Quem cria é a Jessica, com um passo a passo.
-- Combinar com o lembrete de backup: com o Drive ligado, o app pode salvar sozinho, por exemplo uma vez por semana, quando for aberto.
-- **Pronto quando:** um backup salvo no Drive for restaurado noutro navegador com todos os dados.
-
 ### B-21 · Aviso do dia do crédito
 Avisar quando o crédito de um cartão estiver previsto.
 - **Limite do PWA:** sem um servidor, o app não consegue mandar notificação num horário marcado com segurança. O Chrome do Android oferece uma sincronização periódica para apps instalados, mas ele decide quando roda.
@@ -78,18 +80,21 @@ Foto torta ou com fundo atrapalha principalmente o leitor do celular (sem o Gemi
 - Medir com os cupons de `tests/`: quantos campos o leitor acerta com e sem o recorte.
 - **Pronto quando:** o recorte melhorar a leitura nos cupons de teste sem deixar a leitura mais lenta que ~2 s num celular comum.
 
-### B-23 · Usar a carteira em dois celulares
-Hoje tudo foi pensado para um celular só, e os dados ficam nele.
-- **Depende de:** B-20 (Google Drive).
-- Guardar a carteira no Drive e juntar as mudanças feitas em celulares diferentes, sem perder lançamentos quando os dois mexerem ao mesmo tempo.
-- O cofre de senhas continua criptografado, com a mesma senha mestra nos dois aparelhos.
-- **Pronto quando:** um lançamento feito num celular aparecer no outro, e lançamentos feitos ao mesmo tempo nos dois não se perderem.
-
 ### B-06 · Dividir o `app.js` em módulos
 São 2.300 linhas num arquivo só, com um estado global único.
 - Separar em módulos ES, sem etapa de montagem: armazenamento, períodos, cofre, cartões, cupom e conferência, pagamento dividido, backup, telas e atualização.
 - Nada muda para quem usa. O service worker passa a guardar os arquivos novos.
 - Os testes do B-05 (`node --test`) estão prontos e cobrem a leitura e a escolha do cartão; a parte de telas ainda não tem testes.
+
+### B-23 · Sincronizar com uma Planilha Google (dois celulares)
+Segunda etapa depois do B-20: os dados passam a ficar também numa Planilha Google da Jessica, sempre atualizada, e outro celular pode usar a mesma carteira.
+- **Depende de:** B-20 (o mesmo Apps Script ganha as funções de sincronizar). Recomendado depois do B-06, porque mexe no armazenamento do app inteiro.
+- **Cópia no celular continua sendo a principal:** o app grava primeiro no celular (rápido e sem internet) e envia as mudanças ao Apps Script. Sem internet, as mudanças ficam numa fila e são enviadas quando a conexão voltar.
+- **Planilha:** uma aba para cartões e outra para lançamentos, uma linha por registro, com data da última mudança. A Planilha é para consultar, filtrar e fazer gráficos; editar à mão não é o caminho (o app pode sobrescrever).
+- **Dois celulares:** cada aparelho busca as mudanças do outro ao abrir e de tempos em tempos. Lançamentos feitos ao mesmo tempo nos dois não podem se perder; para o mesmo cartão editado nos dois, vale a mudança mais recente.
+- **Cofre:** as senhas continuam criptografadas no celular antes de sair; a Planilha guarda só o texto cifrado, e a senha mestra é a mesma nos dois aparelhos.
+- **Fotos dos cupons:** vão como arquivos numa pasta do Drive, ligados ao lançamento, ou continuam só no celular (decidir antes de começar).
+- **Pronto quando:** um lançamento feito num celular aparecer no outro e na Planilha, lançamentos feitos offline forem enviados ao voltar a internet, e lançamentos simultâneos nos dois aparelhos não se perderem.
 
 ## Ideias
 
