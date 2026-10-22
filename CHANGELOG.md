@@ -10,6 +10,12 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
 A versão em uso aparece em **Ajustes**, no rodapé.
 
+## 1.8.5 — 21/10/2026
+
+### Corrigido
+- **Cadastrar cartão a partir do cupom:** o emissor vinha como "Outro" mesmo quando o comprovante dizia, por exemplo, "VR BENEFICIOS VOUCHER". Agora o Gemini copia a linha do comprovante que identifica o cartão, e o app reconhece o emissor por ela. A adquirente da maquininha (Cielo, Rede, Stone etc.) não é confundida com o emissor.
+- O **tipo** do cartão novo (alimentação, refeição ou multibenefício) vem do comprovante quando ele diz o tipo, por exemplo "ALELO REFEICAO". Só quando o comprovante não diz, o app usa a categoria da loja, como antes. Vale tanto para o Gemini quanto para o leitor do celular.
+
 ## 1.8.4 — 21/10/2026
 
 ### Corrigido
