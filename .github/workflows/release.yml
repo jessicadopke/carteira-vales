@@ -1,0 +1,33 @@
+name: Release
+
+# Depois que a Jéssica faz o merge de "Publicar X.Y.Z" em main:
+# cria a tag vX.Y.Z no commit publicado e a release com as notas do CHANGELOG.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Versão e notas
+        id: v
+        run: |
+          V=$(node -p "require('./version.json').version")
+          echo "versao=$V" >> "$GITHUB_OUTPUT"
+          awk -v v="$V" '$0 ~ "^## "v" —" {on=1; next} on && /^## / {exit} on' CHANGELOG.md > notas.md
+      - name: Criar tag e release (se ainda não existem)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.v.outputs.versao }}
+        run: |
+          if gh release view "v$V" >/dev/null 2>&1; then
+            echo "Release v$V já existe; nada a fazer."
+            exit 0
+          fi
+          node scripts/versao.mjs --check
+          gh release create "v$V" --target "$GITHUB_SHA" --title "v$V" --notes-file notas.md

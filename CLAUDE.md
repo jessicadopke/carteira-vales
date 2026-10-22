@@ -1,0 +1,78 @@
+# Ciclo — instruções para o Claude
+
+PWA pessoal da Jéssica para o saldo dos cartões de vale (VR/VA/multibenefício) da família. HTML/CSS/JS puros, sem build; publicado pelo GitHub Pages a partir de `main` (https://jessicadopke.github.io/ciclo/). Estrutura dos arquivos: seção "Estrutura do projeto" do `README.md`. Decisões já tomadas: `DECISOES.md` (leia antes de propor algo que mude uma delas).
+
+## Comandos
+
+| Para | Comando |
+|---|---|
+| Testes (obrigatório antes de qualquer merge) | `node --test` |
+| Versão nova (atualiza `js/app.js`, `sw.js`, `version.json` e confere o CHANGELOG) | `node scripts/versao.mjs X.Y.Z` |
+| Conferir se os 4 lugares da versão batem | `node scripts/versao.mjs --check` |
+| Ver no navegador (só no PC) | `python -m http.server 8765` nesta pasta, ou o preview "ciclo" |
+
+Arquivo novo em `js/` também entra na lista `FILES` do `sw.js`, senão o app quebra offline.
+
+## Regras do Ciclo
+
+- **O repositório é público.** Nunca grave em arquivo versionado finais de cartão, saldos, nomes, CPFs ou cupons reais. Testes usam dados fictícios ou anonimizados.
+- Só Android/Chrome. Dados só no aparelho (IndexedDB) + backup; nada de servidor próprio.
+- Leitura de cupom: Tesseract no aparelho é o padrão; Gemini é opcional e a chave nunca sai do celular.
+- Textos do app em português simples, para quem usa, não para programador.
+- Mudança visual: conferir em 360 px, tema claro e escuro.
+- Muitas funções só a Jéssica testa no celular: o verificador escreve esse checklist na issue com a etiqueta `teste-no-celular`.
+
+## Publicação
+
+1. O publicador escolhe a versão, escreve a entrada `## X.Y.Z — DD/MM/AAAA` no `CHANGELOG.md` e roda `node scripts/versao.mjs X.Y.Z` e `node --test` **no ramo `dev`**.
+2. Abre o pedido `dev → main` "Publicar X.Y.Z" com `Closes #n` de cada issue e pede revisão a `jessicadopke`.
+3. **A Jéssica aprova e faz o merge** (é a única porta para `main`; o que entra em `main` chega ao celular de quem usa o app).
+4. O workflow `.github/workflows/release.yml` cria a tag `vX.Y.Z` e a release com as notas do CHANGELOG. O publicador confere e move os cartões para **Publicado**.
+
+---
+
+## Como o trabalho anda (igual nos dois projetos)
+
+**Fonte da verdade:** as issues deste repositório e o quadro **Meus Apps** (https://github.com/users/jessicadopke/projects/1). O `BACKLOG.md` é o registro histórico até 22/10/2026; não acrescente itens nele.
+
+**Papéis:** a sessão principal é o *gerente de produto* deste repositório. Ela não programa itens M/G: delega aos agentes em `.claude/agents/` e só lê os relatórios curtos deles.
+
+| Tamanho | Caminho |
+|---|---|
+| P | desenvolvedor (direto da issue) → verificador |
+| M / G | especificador → arquiteto (só se a spec pedir) → desenvolvedor → verificador |
+
+Depois do APROVADO do verificador e dos testes passando, o gerente abre o pedido `item/<n>-… → dev` e **faz o merge sozinho**. Se o verificador DEVOLVER, o desenvolvedor corrige uma vez; na segunda devolução, a issue vai para ⏸ com o motivo.
+
+**Execução automática:** todo dia às **7h (Brasília)**. Por execução: até 2 itens P/M, ou 1 item G. Ordem: primeiro item da coluna **Backlog** deste repositório, de cima para baixo, sem `precisa-de-você`, sem dependência aberta e, fora do PC, sem `só-no-pc`. Modelos: Sonnet por padrão, Haiku para tarefas mecânicas, Opus só no arquiteto.
+
+**Decisões (não param o trabalho):** quando houver escolha que a Jéssica talvez queira fazer, comente na issue no formato abaixo, adicione a etiqueta `decisão` e **siga com a recomendada**. Sem resposta em 48 h, ela vira definitiva e entra no `DECISOES.md`.
+
+```
+**Decisão:** <pergunta em 1 linha>
+- **A (recomendada):** … — porque …
+- **B:** …
+Sigo com A. Se preferir outra, responda aqui até <data + 48 h>.
+```
+
+**Bloqueios (param só aquele item):** adicione `precisa-de-você`, mova o cartão para **⏸ Precisa de você**, explique em 3 linhas o que precisa e passe para o próximo item. Só nestes casos:
+- publicar (`dev → main`), criar repositório, conta, chave ou credencial;
+- apagar dados, arquivos ou issues que não foram criados nesta mesma tarefa;
+- gastar dinheiro ou ativar faturamento;
+- mudar algo registrado como decisão da Jéssica no `DECISOES.md`;
+- qualquer acesso a contas reais dela (Instagram, Google, emissores de cartão);
+- dúvida que torna a spec impossível de escrever.
+
+**Nunca:** push direto em `main`, `--force`, editar `.env`/chaves, pular testes, fechar issue sem o merge que a resolve.
+
+**Quadro (mover cartões):**
+```
+gh project item-list 1 --owner jessicadopke --limit 300 --format json -q '.items[] | select(.content.url=="<URL da issue>") | .id'
+gh project item-edit --project-id PVT_kwHOFHwRG84BoTWj --id <ID> --field-id PVTSSF_lAHOFHwRG84BoTWjzhm0FS4 --single-select-option-id <OPÇÃO>
+```
+Opções: Backlog `833dd14f` · Especificando `ec6b55d4` · Em desenvolvimento `0ed72623` · Verificando `5eb54062` · ⏸ Precisa de você `51326cc9` · Pronto para publicar `4eacbbc4` · Publicado `e63c4fb9`.
+Se o `gh` não estiver disponível (execução na nuvem), registre o andamento como comentário na issue; a próxima sessão no PC acerta o quadro.
+
+**Relatório:** ao terminar cada etapa, comente na issue em até 5 linhas (o que foi feito, link do ramo/pedido, próximo passo). Ao fim da execução, atualize o corpo da issue fixada **📊 Resumo dos agentes** deste repositório: data, itens concluídos, itens em ⏸ (há quantos dias), decisões que vencem nas próximas 48 h, decisões que viraram definitivas.
+
+**Ramos:** `main` (publicado) ← `dev` (integrado) ← `item/<n>-<assunto>`. Commits em português, terminando com `Refs #<n>`.

@@ -1,5 +1,7 @@
 # Ciclo · backlog
 
+> **A partir de 22/10/2026 o andamento fica nas [issues](https://github.com/jessicadopke/ciclo/issues) e no quadro [Meus Apps](https://github.com/users/jessicadopke/projects/1).** Os itens abaixo foram migrados para issues; este arquivo fica como registro e não recebe itens novos.
+
 O que falta fazer no app, em ordem de prioridade. Quando um item fica pronto, ele sai daqui e entra no [CHANGELOG](CHANGELOG.md) da versão em que foi publicado.
 
 **Tipos:** 🐞 defeito · 🔧 manutenção (não muda o app para quem usa) · ✨ função nova · 🧪 validação.

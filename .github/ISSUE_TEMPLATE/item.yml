@@ -1,0 +1,28 @@
+name: Item novo
+description: Função, defeito ou ajuste para o app
+labels: []
+body:
+  - type: dropdown
+    id: tipo
+    attributes:
+      label: Tipo
+      options: [Função nova, Defeito, Manutenção, Validação, Ideia]
+    validations:
+      required: true
+  - type: textarea
+    id: oque
+    attributes:
+      label: O que você quer
+      description: Do jeito que vier à cabeça. O especificador transforma isso em spec.
+    validations:
+      required: true
+  - type: textarea
+    id: pronto
+    attributes:
+      label: Pronto quando
+      description: Opcional. Como você vai saber que ficou bom.
+  - type: dropdown
+    id: urgencia
+    attributes:
+      label: Urgência
+      options: [Normal (entra no fim do Backlog), Urgente (vai para o topo)]
