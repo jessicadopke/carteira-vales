@@ -70,7 +70,7 @@ Sigo com A. Se preferir outra, responda aqui até <data + 48 h>.
 gh project item-edit 1 --owner jessicadopke --url <URL da issue> --field Status --value "<coluna>"
 ```
 Colunas: `Backlog` · `Especificando` · `Em desenvolvimento` · `Verificando` · `⏸ Precisa de você` · `Pronto para publicar` · `Publicado`. Issue nova entra no quadro com `gh project item-add 1 --owner jessicadopke --url <URL>`.
-No PC o `gh` fica em `%LOCALAPPDATA%\Programs\ghin\gh.exe` (fora do PATH).
+No PC o `gh` fica em `%LOCALAPPDATA%\Programs\gh\bin\gh.exe` (fora do PATH).
 Se o `gh` não estiver disponível (execução na nuvem), registre o andamento como comentário na issue; a próxima sessão no PC acerta o quadro.
 
 **Relatório:** ao terminar cada etapa, comente na issue em até 5 linhas (o que foi feito, link do ramo/pedido, próximo passo). Ao fim da execução, atualize o corpo da issue fixada **📊 Resumo dos agentes** deste repositório: data, itens concluídos, itens em ⏸ (há quantos dias), decisões que vencem nas próximas 48 h, decisões que viraram definitivas.
