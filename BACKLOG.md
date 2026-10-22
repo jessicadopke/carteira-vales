@@ -12,7 +12,6 @@ O que falta fazer no app, em ordem de prioridade. Quando um item fica pronto, el
 | # | Item | Tipo | Tam. |
 |---|------|------|------|
 | B-02 | Testar no celular as funções da 1.8.x a 1.10 | 🧪 | P |
-| B-04 | Pôr o código no git e publicar por `git push` | 🔧 | M |
 
 ### B-02 · Testar no celular as funções da 1.8.x a 1.10
 Só a Jessica pode fazer, no celular. O resto foi testado no computador, com o Gemini simulado.
@@ -24,14 +23,6 @@ Só a Jessica pode fazer, no celular. O resto foi testado no computador, com o G
 - [ ] Cadastro de cartão por foto (frente do cartão) e por print do app do emissor.
 - [ ] Atualizar pelo app (Ajustes → Sobre o app).
 - [ ] Instalar o app na tela inicial pelo Chrome (ainda não foi instalado).
-
-### B-04 · Pôr o código no git e publicar por `git push`
-Hoje a pasta local não tem git, e as versões sobem arquivo por arquivo pela página de upload do GitHub. Na 1.8.2, um envio não entrou e a release ficou apontando para o código incompleto.
-- [x] Iniciar o git na pasta `ciclo/app`, ligar ao repositório `jessicadopke/ciclo` e trazer o histórico de lá (22/10/2026).
-- [x] Fazer o login do GitHub no terminal uma vez (feito pela Jessica em 22/10/2026, para o radar de preços).
-- [x] Atualizar a seção "Versões" do README com o passo a passo novo.
-- [ ] Publicar a 1.10.0 por `git push` e criar a release a partir da tag.
-- **Pronto quando:** uma versão for publicada só com `git push` e a release criada a partir da tag.
 
 ## Próximas
 
