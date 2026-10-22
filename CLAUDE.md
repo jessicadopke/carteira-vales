@@ -71,7 +71,7 @@ gh project item-edit 1 --owner jessicadopke --url <URL da issue> --field Status 
 ```
 Colunas: `Backlog` · `Especificando` · `Em desenvolvimento` · `Verificando` · `⏸ Precisa de você` · `Pronto para publicar` · `Publicado`. Issue nova entra no quadro com `gh project item-add 1 --owner jessicadopke --url <URL>`.
 No PC o `gh` fica em `%LOCALAPPDATA%\Programs\gh\bin\gh.exe` (fora do PATH).
-Se o `gh` não estiver disponível (execução na nuvem), registre o andamento como comentário na issue; a próxima sessão no PC acerta o quadro.
+**Na nuvem (execução das 7h)** o `gh` não funciona e não há como mover o quadro. Use as ferramentas `mcp__github__*` (ler issues, comentar, editar etiquetas e responsáveis, abrir e fazer merge de pedidos) e registre a etapa pela etiqueta: `etapa:especificando`, `etapa:desenvolvimento`, `etapa:verificando`, `etapa:pronto-para-publicar` (só uma por vez; `precisa-de-você` vale como ⏸). Uma sessão no PC (ou a automação do quadro, quando existir) acerta as colunas a partir das etiquetas.
 
 **Aviso no celular:** os agentes agem com a conta da Jéssica, então o GitHub não a notifica. O aviso é a mensagem final da execução agendada (o app do Claude manda ao celular): comece por "⏸ Precisa de você: …" quando houver bloqueio novo, senão "Sem pendências para você".
 
