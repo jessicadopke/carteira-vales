@@ -1,6 +1,6 @@
 // Guarda o app no celular para abrir sem internet.
 // Ao publicar uma versão nova, mude VERSION para o celular baixar os arquivos atualizados.
-const VERSION = "ciclo-1.8.3";
+const VERSION = "ciclo-1.8.4";
 const FILES = [
   "./",
   "index.html",

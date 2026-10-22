@@ -5,7 +5,7 @@ O que falta fazer no app, em ordem de prioridade. Quando um item fica pronto, el
 **Tipos:** 🐞 defeito · 🔧 manutenção (não muda o app para quem usa) · ✨ função nova · 🧪 validação.
 **Tamanho:** P (até 1 hora), M (algumas horas), G (um dia ou mais).
 
-*Atualizado em 21/10/2026, versão 1.8.3.*
+*Atualizado em 21/10/2026, versão 1.8.4.*
 
 ## Agora
 
@@ -18,8 +18,9 @@ O que falta fazer no app, em ordem de prioridade. Quando um item fica pronto, el
 
 ### B-01 · Descobrir por que o Gemini não foi usado no celular
 Na 1.8.2, a leitura demorou e no fim o app usou o leitor do celular. A 1.8.3 mostra **Como foi lido** na conferência, com cada tentativa do Gemini (modelo, erro e tempo).
-- **Próximo passo:** ler um cupom na 1.8.3 e mandar um print de "Como foi lido".
-- **Suspeita:** cota gratuita esgotada (erro 429). O Google reduziu o limite gratuito de alguns modelos.
+- **Causa (21/10/2026):** "Como foi lido" mostrou `gemini-flash-latest: tempo esgotado (30,6 s)`. O modelo da geração 3 ainda pensava com `thinkingLevel: low`, e no tempo esgotado o app não tentava outro modelo.
+- **Correção na 1.8.4:** raciocínio `minimal` e um modelo de reserva em paralelo depois de 12 s.
+- **Próximo passo:** ler um cupom na 1.8.4 e conferir o tempo em "Como foi lido".
 - **Pronto quando:** a causa for conhecida e corrigida, ou explicada na tela do Gemini (por exemplo, sugerir outro modelo ou o faturamento).
 
 ### B-02 · Testar no celular as funções da 1.8.x

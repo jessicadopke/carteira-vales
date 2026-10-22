@@ -10,6 +10,14 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
 A versão em uso aparece em **Ajustes**, no rodapé.
 
+## 1.8.4 — 21/10/2026
+
+### Corrigido
+- **Gemini sem resposta em 30 segundos:** o modelo padrão (`gemini-flash-latest`, hoje da geração 3) ainda "pensava" antes de responder, e o app esperava só por ele. Agora:
+  - o app pede ao Gemini o raciocínio **mínimo**, o que deixa a resposta bem mais rápida;
+  - se o modelo escolhido não responder em 12 segundos, um modelo de reserva começa **ao mesmo tempo**, e vale a primeira resposta que chegar. O limite total continua sendo 30 segundos;
+  - em "Como foi lido", a tentativa que ficou para trás aparece como "cancelado".
+
 ## 1.8.3 — 20/10/2026
 
 ### Corrigido
