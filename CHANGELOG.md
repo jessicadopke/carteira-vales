@@ -23,7 +23,7 @@ A versão em uso aparece em **Ajustes**, no rodapé.
 - **Acessibilidade:** os rótulos das abas, o rodapé e os botões "foto" e "×" passaram a ter contraste suficiente para leitura (eram cinza-claro), e os botões pequenos ganharam área de toque mínima de 32 px.
 
 ### Corrigido
-- **Final do cartão errado na leitura com o Gemini:** num comprovante com o número mascarado (por exemplo `637707******4403`), o Gemini podia devolver os 4 **primeiros** dígitos (`6377`, que identificam a rede do cartão) como se fossem o final. Agora o Gemini copia o número como está impresso, e o app tira o final dos dígitos que vêm depois da máscara. Um "final" igual ao começo do número é descartado.
+- **Final do cartão errado na leitura com o Gemini:** num comprovante com o número mascarado (por exemplo `608812******4821`), o Gemini podia devolver os 4 **primeiros** dígitos (`6088`, que identificam a rede do cartão) como se fossem o final. Agora o Gemini copia o número como está impresso, e o app tira o final dos dígitos que vêm depois da máscara. Um "final" igual ao começo do número é descartado.
 - **Final do cartão no leitor do celular:** reconhece `************4321`, `**** **** **** 4321`, `XXXX4321` e `FINAL 4321`, mesmo quando o leitor troca o `*` por `x`, `+` ou `#`.
 - **Leitor do celular:** a forma de pagamento "CARTAO TEF" da NFC-e passa a contar como vale quando o cupom traz o comprovante de um cartão de benefício. Antes ela aparecia como "outra forma".
 - **Leitor do celular:** com cartões de tipos diferentes no mesmo cupom (alimentação e refeição), o tipo do cartão novo fica em aberto, em vez de vir errado para um deles.

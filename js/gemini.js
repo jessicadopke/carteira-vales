@@ -35,7 +35,7 @@
             titular: { type: "STRING", nullable: true, description: "nome do titular do cartão de benefício impresso no comprovante, se houver" },
             texto_cartao: { type: "STRING", nullable: true, description: "linha do comprovante que identifica o cartão ou a rede, copiada como está (ex.: VR BENEFICIOS VOUCHER A VISTA, ALELO REFEICAO)" },
             tipo_cartao: { type: "STRING", enum: ["alimentacao", "refeicao", "flex", "desconhecido"] },
-            cartao_impresso: { type: "STRING", nullable: true, description: "número do cartão exatamente como impresso no comprovante, com a máscara (ex.: 637707******4403)" },
+            cartao_impresso: { type: "STRING", nullable: true, description: "número do cartão exatamente como impresso no comprovante, com a máscara (ex.: 608812******4821)" },
             final_cartao: { type: "STRING", nullable: true, description: "4 ÚLTIMOS dígitos do cartão (os que vêm depois da máscara), se impressos" },
             saldo: { type: "NUMBER", nullable: true, description: "saldo do cartão de benefício impresso no comprovante, em reais" },
             saldo_momento: { type: "STRING", enum: ["apos_compra", "antes_compra", "desconhecido"] },
@@ -59,7 +59,7 @@ Extraia os dados no formato pedido. Regras:
 - "tipo_cartao": alimentacao, refeicao ou flex (multibenefício) só se o comprovante disser; senão "desconhecido".
 - "titular": nome da pessoa dona do cartão, se o comprovante imprimir (PORTADOR, TITULAR, NOME). Nunca use o nome do operador de caixa, da loja ou do "CONSUMIDOR".
 - "cartao_impresso": copie o número do cartão como está no comprovante, com os asteriscos ou X da máscara.
-- "final_cartao": só os 4 ÚLTIMOS dígitos, os que aparecem DEPOIS da máscara (em 637707******4403, o final é 4403). Os primeiros dígitos identificam a rede do cartão e nunca são o final. Se o final não estiver impresso, use null.
+- "final_cartao": só os 4 ÚLTIMOS dígitos, os que aparecem DEPOIS da máscara (em 608812******4821, o final é 4821). Os primeiros dígitos identificam a rede do cartão e nunca são o final. Se o final não estiver impresso, use null.
 - "categoria": a que melhor descreve a loja.`;
 
   async function call(key, model, body, signal, ms) {
@@ -229,7 +229,7 @@ Extraia os dados no formato pedido. Regras:
   const rawIssuer = s => { const t = String(s || "").trim(); return t && !/^(outro|null|desconhecido)$/i.test(t) && !issuerOf(t) ? t.slice(0, 24) : null; };
   // Nome do titular: só letras, de 2 a 40 caracteres
   const holderOf = s => { const t = String(s || "").replace(/\s+/g, " ").trim(); return /^[\p{L} .'-]{2,40}$/u.test(t) && !/consumidor|operador|caixa/i.test(t) ? nameCase(t) : null; };
-  // Final do cartão: os 4 dígitos depois da máscara do número impresso ("637707******4403" → 4403).
+  // Final do cartão: os 4 dígitos depois da máscara do número impresso ("608812******4821" → 4821).
   // O "final" informado pelo Gemini só vale se não for o começo do número (os dígitos da rede do cartão).
   function last4Of(printed, final) {
     const p = String(printed || "").replace(/\s/g, "");
