@@ -28,7 +28,62 @@ Só a Jessica pode fazer, no celular. O resto foi testado no computador, com o G
 
 | # | Item | Tipo | Tam. |
 |---|------|------|------|
+| B-17 | Exportar o extrato em planilha (CSV) | ✨ | P |
+| B-18 | Apagar o artefato antigo do Claude | 🔧 | P |
+| B-19 | Gráficos de gastos por período | ✨ | M |
+| B-20 | Backup direto no Google Drive | ✨ | M |
+| B-21 | Aviso do dia do crédito | ✨ | M |
+| B-22 | Recorte automático da foto do cupom | ✨ | M |
 | B-06 | Dividir o `app.js` em módulos | 🔧 | G |
+| B-23 | Usar a carteira em dois celulares | ✨ | G |
+
+### B-17 · Exportar o extrato em planilha (CSV)
+Hoje os dados só saem pelo backup (arquivo JSON), que não abre numa planilha.
+- Botão **Exportar planilha** no Extrato, que respeita os filtros da tela (cartão, titular, período e busca).
+- Colunas: data, loja, categoria, cartão, titular, emissor, tipo (gasto ou crédito), valor, saldo impresso no cupom e forma de pagamento quando a compra foi dividida.
+- Formato que o Excel e o Google Planilhas abrem direto: separador `;`, vírgula decimal e acentos em UTF-8 com BOM.
+- **Pronto quando:** o arquivo abrir no Excel e no Google Planilhas com as colunas certas e os valores como números.
+
+### B-18 · Apagar o artefato antigo do Claude
+A versão antiga do app, feita como artefato do Claude, ficou guardada em `ciclo/_artefato-claude-antigo` e no link do artefato.
+- **Depende de:** B-02 (app instalado e em uso no celular).
+- Confirmar que nada daquela versão precisa ser recuperado. Então apagar a pasta, e o artefato no claude.ai se a Jessica quiser.
+- **Pronto quando:** a pasta e o artefato tiverem sido removidos, com o OK da Jessica.
+
+### B-19 · Gráficos de gastos por período
+Hoje o período mostra só totais (saldo no início, créditos, gastos e saldo agora).
+- No período de cada cartão, ou de todos: gastos por categoria, as lojas onde mais se gastou e gastos por titular.
+- Comparar com o período anterior ("R$ 120 a mais em Mercado").
+- Desenhar em SVG no próprio app, sem biblioteca de fora, para continuar funcionando sem internet.
+- **Pronto quando:** os gráficos aparecerem no período, nos temas claro e escuro e numa tela de 360 px, com os totais batendo com o extrato.
+
+### B-20 · Backup direto no Google Drive
+Hoje o backup é um arquivo baixado no celular, que precisa ser guardado à mão.
+- Botão **Salvar no Google Drive** e **Restaurar do Drive** em Ajustes, usando a pasta reservada do app no Drive (o app não vê os outros arquivos).
+- Exige criar um projeto no Google Cloud com uma credencial OAuth para o site `jessicadopke.github.io`. Quem cria é a Jessica, com um passo a passo.
+- Combinar com o lembrete de backup: com o Drive ligado, o app pode salvar sozinho, por exemplo uma vez por semana, quando for aberto.
+- **Pronto quando:** um backup salvo no Drive for restaurado noutro navegador com todos os dados.
+
+### B-21 · Aviso do dia do crédito
+Avisar quando o crédito de um cartão estiver previsto.
+- **Limite do PWA:** sem um servidor, o app não consegue mandar notificação num horário marcado com segurança. O Chrome do Android oferece uma sincronização periódica para apps instalados, mas ele decide quando roda.
+- **Primeira parte:** no Início, destacar os créditos previstos para hoje e para os próximos dias, e pedir para confirmar o valor que entrou.
+- **Segunda parte:** testar a notificação pela sincronização periódica no app instalado e ver se o aviso chega a tempo.
+- **Pronto quando:** o Início mostrar os créditos do dia e, se a notificação for confiável, ela chegar no dia do crédito.
+
+### B-22 · Recorte automático da foto do cupom
+Foto torta ou com fundo atrapalha principalmente o leitor do celular (sem o Gemini).
+- Detectar as bordas do papel, endireitar e recortar a foto antes de ler, no próprio celular.
+- Mostrar o recorte para a pessoa ajustar os cantos, se precisar.
+- Medir com os cupons de `tests/`: quantos campos o leitor acerta com e sem o recorte.
+- **Pronto quando:** o recorte melhorar a leitura nos cupons de teste sem deixar a leitura mais lenta que ~2 s num celular comum.
+
+### B-23 · Usar a carteira em dois celulares
+Hoje tudo foi pensado para um celular só, e os dados ficam nele.
+- **Depende de:** B-20 (Google Drive).
+- Guardar a carteira no Drive e juntar as mudanças feitas em celulares diferentes, sem perder lançamentos quando os dois mexerem ao mesmo tempo.
+- O cofre de senhas continua criptografado, com a mesma senha mestra nos dois aparelhos.
+- **Pronto quando:** um lançamento feito num celular aparecer no outro, e lançamentos feitos ao mesmo tempo nos dois não se perderem.
 
 ### B-06 · Dividir o `app.js` em módulos
 São 2.300 linhas num arquivo só, com um estado global único.
@@ -40,10 +95,4 @@ São 2.300 linhas num arquivo só, com um estado global único.
 
 Ainda sem prioridade. Cada uma precisa ser conversada antes de virar item.
 
-- **Recorte automático do cupom:** detectar as bordas do papel e endireitar a foto antes de ler, para o leitor do celular errar menos.
-- **Notificação do dia do crédito:** avisar no celular quando o crédito de um cartão estiver previsto. Depende de o app estar instalado e de permissão de notificações.
-- **Gráficos por período:** gastos por categoria, por loja e por titular em cada ciclo de crédito.
-- **Exportar o extrato em planilha (CSV)**, com filtro por cartão, titular e período.
-- **Backup direto no Google Drive**, em vez de baixar o arquivo e subir à mão.
-- **Uso em dois celulares:** sincronizar a carteira entre aparelhos, por exemplo pelo Drive. É grande, porque hoje tudo foi pensado para um celular só.
-- **Apagar o artefato antigo** (`ciclo/_artefato-claude-antigo`) quando o app estiver instalado e em uso no celular.
+- **Atualizar o saldo por print do app do emissor:** compartilhar com o Ciclo o print do extrato do app da VR, Alelo etc., e o Gemini lê o saldo e os últimos lançamentos. Os emissores não têm API para o dono do cartão.
