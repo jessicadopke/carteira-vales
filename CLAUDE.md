@@ -67,10 +67,10 @@ Sigo com A. Se preferir outra, responda aqui até <data + 48 h>.
 
 **Quadro (mover cartões):**
 ```
-gh project item-list 1 --owner jessicadopke --limit 300 --format json -q '.items[] | select(.content.url=="<URL da issue>") | .id'
-gh project item-edit --project-id PVT_kwHOFHwRG84BoTWj --id <ID> --field-id PVTSSF_lAHOFHwRG84BoTWjzhm0FS4 --single-select-option-id <OPÇÃO>
+gh project item-edit 1 --owner jessicadopke --url <URL da issue> --field Status --value "<coluna>"
 ```
-Opções: Backlog `833dd14f` · Especificando `ec6b55d4` · Em desenvolvimento `0ed72623` · Verificando `5eb54062` · ⏸ Precisa de você `51326cc9` · Pronto para publicar `4eacbbc4` · Publicado `e63c4fb9`.
+Colunas: `Backlog` · `Especificando` · `Em desenvolvimento` · `Verificando` · `⏸ Precisa de você` · `Pronto para publicar` · `Publicado`. Issue nova entra no quadro com `gh project item-add 1 --owner jessicadopke --url <URL>`.
+No PC o `gh` fica em `%LOCALAPPDATA%\Programs\ghin\gh.exe` (fora do PATH).
 Se o `gh` não estiver disponível (execução na nuvem), registre o andamento como comentário na issue; a próxima sessão no PC acerta o quadro.
 
 **Relatório:** ao terminar cada etapa, comente na issue em até 5 linhas (o que foi feito, link do ramo/pedido, próximo passo). Ao fim da execução, atualize o corpo da issue fixada **📊 Resumo dos agentes** deste repositório: data, itens concluídos, itens em ⏸ (há quantos dias), decisões que vencem nas próximas 48 h, decisões que viraram definitivas.
