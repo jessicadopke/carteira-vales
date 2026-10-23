@@ -10,6 +10,17 @@ O app segue o Versionamento Semântico (`MAJOR.MINOR.PATCH`):
 
 A versão em uso aparece em **Ajustes**, no rodapé.
 
+## 1.11.0 — 23/10/2026
+
+### Novo
+- **Backup no Google Drive:** em Ajustes → Backup no Drive, você liga o Drive uma vez e o app guarda sozinho uma cópia dos dados numa pasta "Ciclo – backups" do seu Drive, no máximo a cada 7 dias ou depois de 30 lançamentos novos. Também dá para salvar agora ou restaurar uma cópia da lista. O backup do Drive vai sem as fotos, a menos que você marque "Incluir fotos". Os dados continuam só no celular; o Drive só guarda o arquivo que você mandou.
+- **Exportar o extrato em planilha:** o botão "Exportar planilha" na aba Extrato gera um arquivo CSV com os lançamentos da busca que está na tela.
+- **Gráficos do período:** no cartão e na aba Extrato, gráficos mostram para onde foi o dinheiro: gastos por categoria, pelas lojas onde mais se gastou e por titular. Cada gráfico diz quanto mudou em relação ao período anterior. Os totais batem com o extrato.
+- **Aviso do dia do crédito:** o Início mostra um bloco "Créditos previstos" com os créditos de hoje, de amanhã e dos próximos 3 dias, com o botão "Confirmar valor" para o que já caiu. Em Ajustes, há uma opção experimental de notificação no dia do crédito; o celular decide quando ela chega, então não é garantido.
+
+### Mudou
+- **Lembrete de backup:** com o Drive funcionando, o aviso de backup atrasado some do Início. Se o Drive falhar por mais de 7 dias, o aviso aparece de novo, dizendo que o backup no Drive não está funcionando.
+
 ## 1.10.0 — 22/10/2026
 
 ### Novo
