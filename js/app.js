@@ -16,7 +16,7 @@
   const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
   const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
-  const APP_VERSION = "1.10.0";
+  const APP_VERSION = "1.11.0";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -264,7 +264,7 @@
   // ---------- estado ----------
   const S = {
     cards: [], txs: [], meta: {}, loaded: false,
-    view: { name: "home" }, tab: "home", person: null, periodOffset: 0, busy: false, skipped: new Set(), cardQuery: "", groups: {}, txQuery: "", txLimit: 100,
+    view: { name: "home" }, tab: "home", person: null, periodOffset: 0, gfOffset: 0, gfView: "categorias", busy: false, skipped: new Set(), cardQuery: "", groups: {}, txQuery: "", txLimit: 100,
     key: null, plain: {}, plainSig: {}, reveal: new Set(), lockTimer: null, installEvt: null,
   };
   const $ = id => document.getElementById(id);
@@ -373,6 +373,7 @@
       view.innerHTML = S.tab === "extrato" ? renderExtrato() : S.tab === "cofre" ? renderCofre() : S.tab === "ajustes" ? renderAjustes() : renderHome();
     }
     if (S.cards.length) decryptCards();
+    syncAgenda();
   }
   // Troca de tela com transição: animação nativa do Chrome quando existe, senão entrada suave dos blocos.
   const reduceMotion = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -449,6 +450,72 @@
     if (dayModeOf(card) === "fixed") await Store.patch("cards", card.id, { lastCreditMonth: periodAt(card, d).key });
   }
 
+  // ---------- créditos previstos: hoje e próximos dias ----------
+  // Cartões visíveis com crédito de hoje até 3 dias, menos os que ela já adiou nesta sessão.
+  const previstos = cards => Credito.proximos(cards, new Date(), 3, S.txs).filter(p => !S.skipped.has(p.cardId));
+  const previstosHoje = cards => previstos(cards).filter(p => p.faltam === 0);
+  function renderPrevistos(cards) {
+    const list = previstos(cards);
+    if (!list.length) return "";
+    const hoje = list.filter(p => p.faltam === 0);
+    const emLote = hoje.length > 1 && hoje.every(p => pendingCredits(cards).some(x => x.c.id === p.cardId));
+    const rows = list.map(p => {
+      const c = cardById(p.cardId);
+      const quando = `${p.estimado ? "~" : ""}${Credito.rotulo(p.faltam)}`;
+      const amt = expectedAmount(c);
+      const valor = amountModeOf(c) === "variable"
+        ? `${amt > 0 ? `<span class="num">${brl(amt)}</span> · ` : ""}valor varia`
+        : `<span class="num">${brl(amt)}</span>`;
+      const acoes = p.faltam === 0 && !emLote
+        ? `<span class="actions"><button class="btn small primary" data-act="credito-prev-confirm" data-id="${c.id}">Confirmar valor</button><button class="btn small ghost" data-act="credit-skip" data-id="${c.id}">Ainda não veio</button></span>` : "";
+      return `<div class="prev-row"><span><b>${esc(c.name)}</b>${c.holder ? ` (${esc(c.holder)})` : ""}: <b>${quando}</b> · ${valor}</span>${acoes}</div>`;
+    }).join("");
+    const lote = emLote ? `<span class="actions"><button class="btn small primary" data-act="credit-batch">Confirmar valores</button><button class="btn small ghost" data-act="credit-later">Depois</button></span>` : "";
+    return `<div class="notice prev"><div class="prev-title">Créditos previstos</div>${rows}${lote}</div>`;
+  }
+
+  // ---------- aviso por notificação (experimento) ----------
+  // A agenda dos próximos 14 dias (só data e quantidade) fica em meta.avisoCredito, fora do backup, para o service worker ler.
+  function syncAgenda() {
+    const a = S.meta && S.meta.avisoCredito;
+    if (!S.loaded || !a || !a.ligado) return;
+    const datas = Credito.montarAgenda(S.cards, new Date(), S.txs);
+    if (JSON.stringify(datas) === JSON.stringify(a.datas || [])) return;
+    S.meta = { ...S.meta, avisoCredito: { ...a, datas } };
+    IDB.put("meta", S.meta, "main").catch(e => console.warn("agenda do aviso", e));
+  }
+  // Só mostra o interruptor quando o aparelho permite: periodicSync (Chrome) e app instalado.
+  const avisoSuportado = () => !!S.periodicOk && "Notification" in window;
+  async function avisoLigar() {
+    try {
+      if (!avisoSuportado()) { toast("Seu aparelho ou navegador não permite este aviso."); return; }
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { toast("Sem permissão para avisar. Ative as notificações do Ciclo nas configurações do celular e tente de novo."); return; }
+      const reg = await navigator.serviceWorker.ready;
+      await reg.periodicSync.register("ciclo-credito", { minInterval: 12 * 3600 * 1000 });
+      await Store.setMeta({ ...S.meta, avisoCredito: { ligado: true, datas: Credito.montarAgenda(S.cards, new Date(), S.txs) } });
+      toast("Aviso ligado. Ele pode atrasar ou não chegar; confie no quadro do Início.");
+    } catch (e) {
+      console.warn("aviso de crédito", e);
+      toast("Não consegui ligar o aviso neste aparelho. O quadro do Início continua funcionando.");
+    }
+    render();
+  }
+  async function avisoDesligar() {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg.periodicSync) await reg.periodicSync.unregister("ciclo-credito");
+    } catch (e) { console.warn("aviso de crédito", e); }
+    try { await Store.setMeta({ ...S.meta, avisoCredito: { ligado: false, datas: [] } }); } catch (e) { console.warn(e); }
+    toast("Aviso desligado.");
+    render();
+  }
+  function renderAvisoCredito() {
+    const on = !!(S.meta.avisoCredito && S.meta.avisoCredito.ligado);
+    if (!avisoSuportado()) return `<div class="menu"><div class="menu-note"><span class="t">Aviso de crédito (experimento)</span><span class="s">Seu aparelho ou navegador não permite este aviso. O quadro do Início continua funcionando.</span></div></div>`;
+    return `<div class="menu"><button data-act="${on ? "credito-aviso-desligar" : "credito-aviso-ligar"}"><span class="t">Aviso de crédito (experimento): ${on ? "ligado" : "desligado"}</span><span class="s">O Android decide quando o app roda em segundo plano; o aviso pode atrasar ou não chegar. Confie no quadro do Início. Toque para ${on ? "desligar" : "ligar"}.</span></button></div>`;
+  }
+
   function renderHome() {
     if (S.cards.length === 0) {
       return `
@@ -477,7 +544,10 @@
     // Lembrete de backup: sem backup, backup com mais de 30 dias ou 30 lançamentos novos desde o último
     const newSinceBackup = S.meta.lastBackup ? S.txs.filter(t => (t.createdAt || 0) > S.meta.lastBackup).length : S.txs.length;
     const backupOld = S.txs.length >= 10 && (!S.meta.lastBackup || Date.now() - S.meta.lastBackup > 30 * 86400000);
-    const backupWarn = backupOld || (S.meta.lastBackup && newSinceBackup >= 30)
+    const lembreteDrive = Drive.lembrete({ drive: S.meta.drive, agora: Date.now() });
+    const driveWarn = lembreteDrive.tipo === "falhando"
+      ? `<div class="notice info"><span>${lembreteDrive.texto} Os dados deste celular continuam aqui; veja a ligação com o Drive.</span><span class="actions"><button class="btn small primary" data-act="m-drive">Abrir Drive</button></span></div>` : "";
+    const backupWarn = driveWarn || lembreteDrive.tipo === "nenhum" ? driveWarn : backupOld || (S.meta.lastBackup && newSinceBackup >= 30)
       ? `<div class="notice info"><span>${!S.meta.lastBackup ? "Você ainda não fez backup." : backupOld ? "Seu último backup tem mais de 30 dias." : `Há ${newSinceBackup} lançamentos novos desde o último backup.`} Se o celular for perdido ou formatado, os dados vão junto.</span><span class="actions"><button class="btn small primary" data-act="backup">Fazer backup</button></span></div>` : "";
     const credited = S.txs.filter(t => ids.has(t.cardId) && isBenefitCredit(t) && (t.date || "").startsWith(mk)).reduce((s, t) => s + t.amount, 0);
     return `
@@ -491,7 +561,8 @@
         </div>
       </section>
       ${peopleBar}
-      ${renderCreditNotices(pendingCredits(cards))}
+      ${renderPrevistos(cards)}
+      ${renderCreditNotices(pendingCredits(cards).filter(({ c }) => !previstosHoje(cards).some(p => p.cardId === c.id)))}
       ${renderUpdateNotice()}
       ${backupWarn}
       ${renderCardToolbar()}
@@ -512,22 +583,70 @@
     cartao: svg('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h4"/>'),
   };
 
+  // ---------- gráficos de gastos ----------
+  const periodoDeCartao = (c, n) => periodShift(c, periodAt(c, new Date()), n);
+  // Painel "Gastos do período": offset 0 = período atual, -1 = o anterior... Cada cartão usa o seu período.
+  // nav: botões ‹ › próprios (aba Extrato); na tela do cartão quem navega é o painel "Período".
+  function renderGraficos(cards, offset, nav) {
+    const sel = Graficos.selecionar(S.txs, cards, offset, periodoDeCartao);
+    const atual = Graficos.somarGastos(sel.atual, cards);
+    const ant = Graficos.somarGastos(sel.anterior, cards);
+    const multi = atual.titulares.todos.length > 1;
+    const view = S.gfView === "titulares" && !multi ? "categorias" : (["categorias", "lojas", "titulares"].includes(S.gfView) ? S.gfView : "categorias");
+    const abas = [["categorias", "Categorias"], ["lojas", "Lojas"]].concat(multi ? [["titulares", "Titulares"]] : []);
+    const comp = Graficos.comparar(atual[view], ant[view]);
+    const navHtml = nav ? `
+      <div class="pernav">
+        <button class="iconbtn" data-act="gf-off" data-d="-1" aria-label="Período anterior" ${offset <= -36 ? "disabled" : ""}>‹</button>
+        <span class="p num">${offset === 0 ? "Atual" : (-offset) + "º atrás"}</span>
+        <button class="iconbtn" data-act="gf-off" data-d="1" aria-label="Próximo período" ${offset === 0 ? "disabled" : ""}>›</button>
+      </div>` : "";
+    return `
+      <section class="panel" id="gfPanel">
+        <div class="panel-head"><h2>Gastos do período</h2>${navHtml}</div>
+        ${nav ? `<p class="hint">Período de cada cartão${offset === 0 ? "" : `, ${-offset} ${offset === -1 ? "período" : "períodos"} atrás`}.</p>` : ""}
+        ${atual.total ? `<div class="gf-tabs" role="group" aria-label="Agrupar gastos por">${abas.map(([k, n]) => `<button data-act="gf-view" data-v="${k}" aria-pressed="${view === k}">${n}</button>`).join("")}</div>` : ""}
+        ${Graficos.desenhar(atual[view], brl, esc, comp)}
+        ${atual.total ? `<p class="gf-frase gv">${esc(Graficos.frase(comp, brl))}</p>` : ""}
+      </section>`;
+  }
+
   // ---------- aba Extrato ----------
   function renderExtrato() {
     if (!S.cards.length) return renderHome();
     return `
       <h1 class="page-title">Extrato</h1>
       <div class="toolbar"><input id="txSearch" class="search" type="search" placeholder="Buscar loja, categoria, cartão, titular ou valor" value="${esc(S.txQuery)}" autocomplete="off" aria-label="Buscar no extrato"></div>
+      ${renderGraficos(visibleCards(), S.gfOffset, true)}
       <div id="txArea">${renderTxArea()}</div>`;
   }
-  function renderTxArea() {
+  // Lançamentos do extrato conforme a busca da tela (usado na lista e na planilha).
+  function extratoFiltrado() {
     const words = fold(S.txQuery.trim()).split(/\s+/).filter(Boolean);
-    const list = S.txs.filter(t => {
+    return S.txs.filter(t => {
       if (!words.length) return true;
       const c = cardById(t.cardId);
       const hay = fold([t.desc, t.cat, c && c.name, c && c.holder, c && c.issuer, fmtInput(t.amount), (t.date || "").split("-").reverse().join("/"), t.kind === "credit" ? "credito" : "gasto"].join(" "));
       return words.every(w => hay.includes(w));
     }).sort(txSort);
+  }
+  async function exportarPlanilha() {
+    const list = extratoFiltrado();
+    if (!list.length) { toast("Nada para exportar."); return; }
+    const name = `ciclo-extrato-${todayISO()}.csv`;
+    const file = new File([Csv.montar(list, S.cards)], name, { type: "text/csv;charset=utf-8" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: "Extrato do Ciclo" }); toast("Planilha enviada."); return; }
+      catch (e) { if (e.name === "AbortError") return; }
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(file); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    toast("Planilha salva em Downloads.");
+  }
+  function renderTxArea() {
+    const list = extratoFiltrado();
     const spent = list.filter(t => t.kind === "debit" && t.source !== "ajuste").reduce((s, t) => s + t.amount, 0);
     const got = list.filter(isBenefitCredit).reduce((s, t) => s + t.amount, 0);
     const shown = list.slice(0, S.txLimit);
@@ -537,7 +656,8 @@
         <div class="tot"><span class="k">Créditos</span><span class="v num in">${brl(got)}</span></div>
       </div>
       <section class="panel">${list.length ? renderTxList(shown, true) : `<div class="empty">Nada encontrado para “${esc(S.txQuery)}”.</div>`}</section>
-      ${list.length > shown.length ? `<button class="btn more" data-act="more-tx">Mostrar mais (${list.length - shown.length} restantes)</button>` : ""}`;
+      ${list.length > shown.length ? `<button class="btn more" data-act="more-tx">Mostrar mais (${list.length - shown.length} restantes)</button>` : ""}
+      ${list.length ? `<button class="btn more" data-act="export-csv">Exportar planilha</button>` : ""}`;
   }
 
   // ---------- aba Cofre ----------
@@ -572,6 +692,9 @@
       <div class="menu">
         <button data-act="m-backup"><span class="t">Fazer backup</span><span class="s">Arquivo com cartões, extratos e senhas (as senhas continuam criptografadas).</span></button>
         <button data-act="import"><span class="t">Restaurar backup</span><span class="s">Substitui os dados deste celular pelos do arquivo.</span></button>
+        <button data-act="m-drive"><span class="t">Backup no Drive</span><span class="s">${driveOn() ? "Ligado: o app guarda uma cópia no seu Google Drive sozinho." : "Guarda uma cópia sozinha no seu Google Drive."}</span></button>
+        ${driveOn() ? `<button data-act="drive-save"><span class="t">Salvar no Drive</span><span class="s">${S.meta.drive.ultimo ? "Último: " + new Date(S.meta.drive.ultimo).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + "." : "Ainda não salvou."}</span></button>
+        <button data-act="drive-restore"><span class="t">Restaurar do Drive</span><span class="s">Escolha um backup do Drive para trazer de volta.</span></button>` : ""}
         <button data-act="m-photos"><span class="t">Fotos dos cupons</span><span class="s">Espaço usado e limpeza de fotos antigas.</span></button>
         <button data-act="m-about"><span class="t">Onde ficam os dados</span><span class="s">Como não perder nada ao trocar de celular.</span></button>
       </div>
@@ -579,6 +702,8 @@
       <div class="menu">
         <button data-act="m-gemini"><span class="t">Gemini</span><span class="s">${S.meta.gemini && S.meta.gemini.enabled && S.meta.gemini.key ? "Ligado: cupons e cartões são lidos pelo Gemini, com o leitor do celular como reserva." : "Desligado: cupons e cartões são lidos só no celular, sem internet."}</span></button>
       </div>
+      <div class="section-head"><h2>Avisos</h2></div>
+      ${renderAvisoCredito()}
       <div class="section-head"><h2>Aparência</h2></div>
       <div class="menu">
         <button data-act="m-theme"><span class="t">Tema</span><span class="s">Agora: ${THEMES[themeNow()].toLowerCase()}. ${THEME_HINT[themeNow()]}</span></button>
@@ -804,7 +929,7 @@
   }
   function goTab(t) {
     if (t === S.tab && S.view.name !== "card") { window.scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" }); return; }
-    navigate(() => { S.tab = t; S.view = { name: "home" }; render(); });
+    navigate(() => { S.tab = t; S.view = { name: "home" }; S.gfOffset = 0; render(); });
     const st = history.state || {};
     if (t !== "home") whenHistoryIdle(() => st.tab ? history.replaceState({ tab: t }, "") : history.pushState({ tab: t }, ""));
   }
@@ -1109,6 +1234,7 @@
         </div>
         ${quick}
       </section>
+      ${renderGraficos([c], S.periodOffset, false)}
       <section class="panel">
         <div class="panel-head"><h2>Extrato do período</h2><span class="label num">${st.txs.length} lançamentos</span></div>
         ${renderTxList(st.txs.sort(txSort), false)}
@@ -2028,12 +2154,125 @@
     try { persisted = await navigator.storage.persisted(); } catch (e) {}
     openSheet(`
       <h3>Onde ficam seus dados</h3>
-      <p>Tudo fica guardado apenas neste celular, dentro do app. Nada é enviado para a internet: nem os cupons, nem as fotos, nem as senhas.</p>
+      <p>Tudo fica guardado apenas neste celular, dentro do app. Nada é enviado para a internet, a menos que você ligue por conta própria o backup no Drive (a cópia vai para o seu Google Drive) ou a leitura com o Gemini (as fotos vão para o Google). As senhas do cofre só saem do celular dentro do backup, e criptografadas.</p>
       <p>Se você desinstalar o app, limpar os dados do Chrome ou trocar de celular, os dados se perdem. Faça backup e guarde o arquivo no Google Drive ou envie para você mesmo.</p>
       <p class="hint">${esc(usage)} ${persisted ? "O Android foi avisado para não apagar estes dados sozinho." : ""}</p>
       <div class="btnrow"><button class="btn primary" id="abBk">Fazer backup agora</button><button class="btn" data-close>Fechar</button></div>`, () => {
       $("abBk").addEventListener("click", backupSheet);
     });
+  }
+
+  async function coletarFotos() {
+    const out = [];
+    for (const r of await IDB.all("receipts")) out.push({ id: r.id, createdAt: r.createdAt, data: await blobToDataURL(r.blob) });
+    return out;
+  }
+
+  // ---------- backup no Drive (opcional; veja js/drive.js e apps-script/backup.gs) ----------
+  const driveOn = () => !!(S.meta.drive && S.meta.drive.ligado && S.meta.drive.url && S.meta.drive.secret);
+  // Gera o backup e manda ao script. Lança Error com texto em português se não der.
+  async function enviarAoDrive() {
+    const d = S.meta.drive, fotos = !!d.fotos;
+    const receipts = fotos ? await coletarFotos() : [];
+    const conteudo = JSON.stringify(Drive.montarBackup({ cards: S.cards, txs: S.txs, meta: S.meta, receipts }, fotos));
+    if (!Drive.cabe(conteudo)) throw new Error("Com as fotos o backup passa do limite do Drive. Salve sem fotos ou apague fotos antigas em Ajustes → Fotos.");
+    await Drive.chamar(d, { acao: "salvar", nome: Drive.nomeArquivo(new Date()), conteudo });
+    const agora = Date.now();
+    await Store.setMeta({ ...S.meta, lastBackup: agora, drive: { ...S.meta.drive, ultimo: agora, ultimoErro: null } });
+  }
+  async function salvarNoDrive() {
+    if (!driveOn()) { driveSheet(); return; }
+    toast("Salvando no Drive…");
+    const ok = await run(enviarAoDrive, "Backup salvo no Drive.");
+    return ok;
+  }
+  // Ao abrir o app: em segundo plano, sem aviso de erro (tenta de novo na próxima abertura).
+  async function driveAutomatico() {
+    if (!driveOn() || !navigator.onLine) return;
+    const d = S.meta.drive;
+    const novos = d.ultimo ? S.txs.filter(t => (t.createdAt || 0) > d.ultimo).length : S.txs.length;
+    if (!Drive.precisaSalvar({ ligado: true, ultimo: d.ultimo, novos, agora: Date.now() })) return;
+    try { await enviarAoDrive(); }
+    catch (e) {
+      console.warn("backup no Drive", e);
+      try { await Store.setMeta({ ...S.meta, drive: { ...S.meta.drive, ultimoErro: Date.now() } }); } catch (e2) {}
+    }
+    if (!S.busy && !$("scrim")) render();
+  }
+  async function restaurarDoDrive() {
+    if (!driveOn()) { driveSheet(); return; }
+    toast("Buscando backups no Drive…");
+    let itens;
+    try { itens = (await Drive.chamar(S.meta.drive, { acao: "listar" })).itens || []; }
+    catch (e) { toast(e.message); return; }
+    if (!itens.length) { toast("Ainda não há backups no Drive."); return; }
+    const fmtTam = b => b >= 1048576 ? (b / 1048576).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";
+    openSheet(`
+      <h3>Restaurar do Drive</h3>
+      <p class="hint">Escolha o backup. Antes de trocar os dados deste celular, o app pede a sua confirmação.</p>
+      <div class="menu">${itens.map((it, i) => `<button data-i="${i}"><span class="t">${esc(new Date(it.data).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }))}</span><span class="s num">${fmtTam(it.tamanho)}</span></button>`).join("")}</div>
+      <div class="btnrow"><button class="btn" data-close>Cancelar</button></div>`, sheet => {
+      sheet.querySelectorAll("[data-i]").forEach(b => b.addEventListener("click", async () => {
+        b.disabled = true;
+        try {
+          const r = await Drive.chamar(S.meta.drive, { acao: "ler", id: itens[+b.dataset.i].id });
+          importFile(JSON.parse(r.conteudo));
+        } catch (e) { b.disabled = false; toast(e instanceof SyntaxError ? "Este backup do Drive não é válido." : e.message); }
+      }));
+    });
+  }
+  function driveSheet() {
+    const d = S.meta.drive || {};
+    let secret = d.secret || Drive.gerarSegredo();
+    openSheet(`
+      <h3>Backup no Drive</h3>
+      <p class="hint">O Ciclo guarda uma cópia dos seus dados numa pasta do seu Google Drive, sozinho, a cada 7 dias ou 30 lançamentos novos. Se perder o celular, você restaura de lá. É preciso fazer uma vez a configuração abaixo, no computador.</p>
+      <form id="dForm" class="sform" autocomplete="off">
+        <label class="field"><span>Código secreto (copie e use no passo 2)</span>
+          <input id="dSec" type="text" readonly value="${esc(secret)}"></label>
+        <div class="btnrow"><button class="btn small" type="button" id="dCopy">Copiar código</button><button class="btn small" type="button" id="dNew">Gerar outro</button></div>
+        <ol class="hint">
+          <li>No computador, abra script.google.com, crie um projeto e cole o arquivo <b>apps-script/backup.gs</b> do Ciclo.</li>
+          <li>Troque o texto da linha SEGREDO_LOCAL pelo código acima e rode a função <b>configurar</b>.</li>
+          <li>Implante como <b>App da Web</b> (executar como você; acesso: qualquer pessoa) e copie o link.</li>
+          <li>Cole o link aqui e toque em <b>Testar conexão</b>.</li>
+        </ol>
+        <label class="field"><span>Link do script</span><input id="dUrl" type="url" inputmode="url" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(d.url || "")}"></label>
+        <label class="check"><input type="checkbox" id="dOn" ${d.ligado ? "checked" : ""}> <span>Salvar no Drive automaticamente</span></label>
+        <label class="check"><input type="checkbox" id="dFotos" ${d.fotos ? "checked" : ""}> <span>Incluir fotos (o backup fica bem maior e pode passar do limite de 20 MB)</span></label>
+        <p class="hint">Quem tiver o link e o código consegue ler os backups. Não compartilhe os dois. O link e o código ficam só neste celular e não entram no backup.</p>
+        <div class="err" id="dErr"></div>
+        <p class="hint" id="dOk"></p>
+        <div class="btnrow">
+          <button class="btn primary" type="submit" id="dSave">Salvar</button>
+          <button class="btn" type="button" id="dTest">Testar conexão</button>
+          <button class="btn" type="button" data-close>Fechar</button>
+        </div>
+      </form>`, () => {
+      const cfg = () => ({ url: $("dUrl").value.trim(), secret });
+      $("dCopy").addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(secret); toast("Código copiado."); } catch (e) { $("dSec").select(); toast("Selecione e copie o código."); }
+      });
+      $("dNew").addEventListener("click", () => { secret = Drive.gerarSegredo(); $("dSec").value = secret; $("dOk").textContent = "Código novo. Troque também no script e rode “configurar” de novo."; });
+      $("dTest").addEventListener("click", async () => {
+        $("dErr").textContent = ""; $("dOk").textContent = "";
+        if (!/^https:\/\//i.test(cfg().url)) { $("dErr").textContent = "Cole o link do App da Web (começa com https://)."; return; }
+        $("dTest").disabled = true; $("dTest").textContent = "Testando…";
+        try { await Drive.chamar(cfg(), { acao: "listar" }); $("dOk").textContent = "Conectado."; }
+        catch (e) { $("dErr").textContent = e.message; }
+        $("dTest").disabled = false; $("dTest").textContent = "Testar conexão";
+      });
+      $("dForm").addEventListener("submit", async e => {
+        e.preventDefault();
+        const { url } = cfg(), ligado = $("dOn").checked;
+        $("dErr").textContent = "";
+        if (ligado && !/^https:\/\//i.test(url)) { $("dErr").textContent = "Cole o link do App da Web (começa com https://) para ligar."; return; }
+        const drive = { ...d, url, secret, ligado, fotos: $("dFotos").checked };
+        if (ligado && !d.ligado) { drive.ligadoEm = Date.now(); drive.ultimoErro = null; }
+        const ok = await run(() => Store.setMeta({ ...S.meta, drive }), ligado ? "Backup no Drive ligado." : "Configuração salva.");
+        if (ok) { closeSheet(); if (ligado && !d.ligado) driveAutomatico(); }
+      });
+    }, { secret: true });
   }
 
   function backupSheet() {
@@ -2046,10 +2285,8 @@
       $("bkGo").addEventListener("click", async () => {
         $("bkGo").disabled = true; $("bkGo").textContent = "Gerando…";
         try {
-          const data = { app: "ciclo", version: BACKUP_VERSION, exportedAt: new Date().toISOString(), cards: S.cards, txs: S.txs, meta: { vault: S.meta.vault || null }, receipts: [] };
-          if ($("bkPhotos").checked) {
-            for (const r of await IDB.all("receipts")) data.receipts.push({ id: r.id, createdAt: r.createdAt, data: await blobToDataURL(r.blob) });
-          }
+          const fotos = $("bkPhotos").checked;
+          const data = Drive.montarBackup({ cards: S.cards, txs: S.txs, meta: S.meta, receipts: fotos ? await coletarFotos() : [] }, fotos);
           const name = `ciclo-backup-${todayISO()}.json`;
           const file = new File([JSON.stringify(data)], name, { type: "application/json" });
           let shared = false;
@@ -2075,9 +2312,10 @@
     });
   }
 
+  // Aceita o arquivo escolhido ou os dados já lidos (restaurar do Drive).
   async function importFile(file) {
     let data;
-    try { data = JSON.parse(await file.text()); } catch (e) { toast("Este arquivo não é um backup válido."); return; }
+    try { data = typeof file.text === "function" ? JSON.parse(await file.text()) : file; } catch (e) { toast("Este arquivo não é um backup válido."); return; }
     if (!data || !["ciclo", "carteira-vales"].includes(data.app) || !Array.isArray(data.cards) || !Array.isArray(data.txs)) { toast("Este arquivo não é um backup do Ciclo."); return; }
     const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString("pt-BR") : "data desconhecida";
     confirmSheet("Restaurar backup?", `O backup de <b>${esc(when)}</b> tem ${data.cards.length} cartões e ${data.txs.length} lançamentos. Os dados atuais deste celular serão <b>substituídos</b>.`, "Restaurar", async () => {
@@ -2121,6 +2359,8 @@
         else navigate(() => { S.view = { name: "home" }; render(); }, "back");
         break;
       case "person": S.person = el.dataset.all ? null : el.dataset.p; render(); break;
+      case "gf-view": S.gfView = el.dataset.v; render(); break;
+      case "gf-off": S.gfOffset = Math.max(-36, Math.min(0, S.gfOffset + Number(el.dataset.d))); render(); break;
       case "per": S.periodOffset = Math.min(0, S.periodOffset + Number(el.dataset.d)); render(); break;
       case "new-card": cardSheet(null); break;
       case "edit-card": card && cardSheet(card); break;
@@ -2162,6 +2402,9 @@
         else creditSheet(card);
         break;
       }
+      case "credito-prev-confirm": card && creditSheet(card); break;
+      case "credito-aviso-ligar": avisoLigar(); break;
+      case "credito-aviso-desligar": avisoDesligar(); break;
       case "credit-skip": S.skipped.add(id); render(); break;
       case "credit-batch": creditBatchSheet(); break;
       case "credit-later": pendingCredits(visibleCards()).forEach(({ c }) => S.skipped.add(c.id)); render(); break;
@@ -2181,6 +2424,10 @@
       case "eye": toggleEye(); break;
       case "install": installApp(); break;
       case "m-backup": backupSheet(); break;
+      case "export-csv": exportarPlanilha(); break;
+      case "m-drive": driveSheet(); break;
+      case "drive-save": salvarNoDrive(); break;
+      case "drive-restore": restaurarDoDrive(); break;
       case "m-photos": photosSheet(); break;
       case "m-about": aboutSheet(); break;
       case "m-master": changeMasterSheet(); break;
@@ -2235,6 +2482,7 @@
       history.replaceState({ home: true }, "");
       render();
       setTimeout(() => checkUpdate(false), 1500);
+      setTimeout(driveAutomatico, 3000);
       const acao = new URLSearchParams(location.search).get("acao");
       if (acao && S.cards.length) {
         history.replaceState({ home: true }, "", location.pathname);
@@ -2250,5 +2498,11 @@
 
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     navigator.serviceWorker.register("sw.js").catch(e => console.warn("service worker", e));
+    // O aviso de crédito por notificação só aparece com periodicSync e o app instalado.
+    navigator.serviceWorker.ready.then(reg => {
+      const instalado = window.matchMedia && matchMedia("(display-mode: standalone)").matches;
+      S.periodicOk = "periodicSync" in reg && instalado;
+      if (S.periodicOk && S.loaded && S.tab === "ajustes") render();
+    }).catch(e => console.warn("service worker", e));
   }
 })();

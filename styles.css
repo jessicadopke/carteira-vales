@@ -171,7 +171,7 @@ body.hide-values #eyeBtn .eye-off { display: block; }
 .hero-stats .v { font-weight: 700; font-size: 15px; }
 
 /* esconder valores */
-body.hide-values :is(.big, .bal, .rbal, .tx .a, .stat .v, .person .v, .gmeta, .hero-stats .v, .hero .sub .money, .rsub .money, .split-after, .tot .v) {
+body.hide-values :is(.big, .bal, .rbal, .tx .a, .stat .v, .person .v, .gmeta, .hero-stats .v, .hero .sub .money, .rsub .money, .split-after, .tot .v, .gv) {
   filter: blur(7px); user-select: none; transition: filter .2s var(--ease);
 }
 
@@ -239,6 +239,11 @@ body.hide-values :is(.big, .bal, .rbal, .tx .a, .stat .v, .person .v, .gmeta, .h
 /* ---------- avisos ---------- */
 .notice { background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--warn-line); border-radius: var(--r); padding: 12px 14px; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; font-size: 14px; }
 .notice.info { background: var(--info-bg); color: var(--fg); border-color: color-mix(in srgb, var(--accent) 22%, var(--line)); }
+.notice.prev { display: block; }
+.notice.prev .prev-title { font-weight: 700; margin-bottom: 6px; }
+.notice.prev .prev-row { display: flex; gap: 8px 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 6px 0; border-top: 1px solid var(--warn-line); }
+.notice.prev > .actions { margin-top: 8px; }
+.menu-note { padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
 .notice .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ---------- botões ---------- */
@@ -486,3 +491,19 @@ html[data-nav="back"]::view-transition-new(root) { animation-name: vt-in-back; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
   ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
 }
+
+/* ---------- gráficos de gastos ---------- */
+.gf-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.gf-tabs button { border: 1px solid var(--line); background: var(--sunk); color: var(--muted); font-weight: 700; font-size: 13px; padding: 7px 12px; border-radius: 999px; }
+.gf-tabs button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.gf-rows { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.gf-row { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.gf-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; min-width: 0; }
+.gf-lab { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 14px; }
+.gf-val { flex: none; font-weight: 800; font-size: 14px; white-space: nowrap; }
+.gf-bar { display: block; width: 100%; height: 8px; }
+.gf-dif { font-size: 12px; color: var(--muted); }
+.gf-dif.mais .gv { color: var(--bad); font-weight: 700; }
+.gf-dif.menos .gv { color: var(--good); font-weight: 700; }
+.gf-frase { font-size: 13.5px; font-weight: 700; padding: 8px 12px; border-radius: 12px; background: var(--sunk); border-left: 4px solid var(--amber); }
+.gf-vazio { text-align: center; padding: 8px 0; }
