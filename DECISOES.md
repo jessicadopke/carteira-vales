@@ -14,3 +14,7 @@ Decisões já tomadas sobre o app. Agentes: não mude nenhuma delas sem a Jéssi
 | 20/10/2026 | Cadastro de cartão por foto guarda só os 4 últimos dígitos e não guarda a imagem. | Segurança. |
 | 22/10/2026 | O repositório é público: nenhum final de cartão, saldo ou cupom real em arquivo versionado. | Um commit chegou a ter um final real e foi corrigido. |
 | 22/10/2026 | Andamento pelas issues e pelo quadro "Meus Apps"; agentes trabalham sozinhos e só param nos bloqueios do `CLAUDE.md`; publicar em `main` só com o merge da Jéssica. | Automatizar sem perder o controle do que chega ao celular. |
+| 23/10/2026 (#2) | Backup no Drive por Apps Script publicado como App da Web com acesso "Qualquer pessoa", protegido por código secreto longo gerado pelo app. "Somente eu" não funciona com `fetch` sem login. | Único jeito de o celular gravar no Drive dela sem servidor próprio. |
+| 23/10/2026 (#2) | O backup no Drive é uma exceção opcional a "dados só no aparelho": só sai do celular se ela ligar, e vai para o Drive dela. | Proteção contra perda ou formatação do celular. |
+| 23/10/2026 (#2) | Drive guarda os 30 backups mais novos; salva sozinho a cada 7 dias ou 30 lançamentos novos; limite de 20 MB por envio; backup do Drive sem fotos por padrão. | Não encher o Drive e ficar dentro do limite do Apps Script. |
+| 23/10/2026 (#2) | Código secreto vai no corpo do POST e é comparado direto no script, sem hash. Link e código ficam só no celular, fora do backup. | O código do script é a única cópia além do celular. |

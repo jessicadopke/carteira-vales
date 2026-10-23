@@ -24,15 +24,27 @@ Ciclo controla o saldo dos cartões de vale-alimentação, vale-refeição e mul
 - **Extrato:** com busca e com os totais de gastos e créditos.
 - **Cofre de senhas:** a senha do cartão e o login do app do emissor ficam criptografados (AES-256-GCM, chave derivada da senha mestra com PBKDF2). O cofre tranca sozinho.
 - **Privacidade:** o botão de olho esconde os valores. O tema pode ser automático, claro ou escuro.
-- **Backup e restauração:** por arquivo. As senhas continuam criptografadas dentro dele.
+- **Backup e restauração:** por arquivo, ou sozinho numa pasta do seu Google Drive (opcional, veja abaixo). As senhas continuam criptografadas dentro dele.
 
 ## Onde ficam os dados
 
-Tudo fica **só no celular** (IndexedDB do navegador): cartões, extratos, fotos e senhas. Este site entrega apenas o programa, e nenhum dado pessoal passa por aqui. A única exceção é a leitura com o Gemini, se você ligar: aí as fotos de cupons e cartões vão para o Google. Por isso:
+Tudo fica **só no celular** (IndexedDB do navegador): cartões, extratos, fotos e senhas. Este site entrega apenas o programa, e nenhum dado pessoal passa por aqui. As únicas exceções são opcionais e só valem se você ligar: a leitura com o Gemini (as fotos de cupons e cartões vão para o Google) e o backup no Drive (uma cópia dos dados vai para o seu Google Drive). Por isso:
 
 - **Faça backup** em **Ajustes → Fazer backup** e guarde o arquivo, por exemplo no Google Drive.
 - Para trocar de celular, restaure o backup em **Ajustes → Restaurar backup**.
 - Se esquecer a senha mestra do cofre, as senhas guardadas não podem ser recuperadas.
+
+### Backup automático no Drive (opcional)
+
+O Ciclo guarda sozinho uma cópia dos dados na pasta **Ciclo – backups** do seu Google Drive (a cada 7 dias ou 30 lançamentos novos, ao abrir o app), com os 30 mais novos. Para ligar, uma vez, no computador:
+
+1. No app, abra **Ajustes → Backup no Drive** e toque em **Copiar código**.
+2. Em https://script.google.com, crie um projeto e cole o arquivo `apps-script/backup.gs`.
+3. Troque o texto da linha `SEGREDO_LOCAL` pelo código copiado (só no editor; não coloque o código real no repositório) e rode a função `configurar`.
+4. **Implantar → App da Web**, executar como você, acesso para **qualquer pessoa**. Copie o link.
+5. No app, cole o link, toque em **Testar conexão** e depois em **Salvar**.
+
+**Segurança:** quem tiver o link e o código consegue ler e gravar os backups; não compartilhe os dois. O link e o código ficam só no celular e não entram no backup. O backup do Drive é sem fotos, a menos que você marque "Incluir fotos" (limite de 20 MB). Para restaurar: **Ajustes → Restaurar do Drive**.
 
 ### Leitura com o Gemini (opcional)
 
@@ -69,6 +81,8 @@ sw.js                 service worker: guarda o app para uso offline
 js/app.js             telas, cartões, períodos, cofre, backup
 js/receipt.js         leitura do cupom no celular (OCR) e interpretação do texto
 js/gemini.js          leitura de cupons e cartões pelo Gemini (opcional)
+js/drive.js           backup no Google Drive (opcional): montagem do backup, regras de quando salvar e chamada ao script
+apps-script/          script que a usuária cola no Google Apps Script (não é usado pelo app)
 js/issuers.js         emissores de cartão (nome, cor, sigla e como reconhecer): um emissor novo entra só aqui
 js/match.js           qual cartão pagou o cupom e aviso de cartão que não está na carteira
 tests/                testes automáticos da leitura de cupons e da escolha do cartão

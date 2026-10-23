@@ -477,7 +477,10 @@
     // Lembrete de backup: sem backup, backup com mais de 30 dias ou 30 lançamentos novos desde o último
     const newSinceBackup = S.meta.lastBackup ? S.txs.filter(t => (t.createdAt || 0) > S.meta.lastBackup).length : S.txs.length;
     const backupOld = S.txs.length >= 10 && (!S.meta.lastBackup || Date.now() - S.meta.lastBackup > 30 * 86400000);
-    const backupWarn = backupOld || (S.meta.lastBackup && newSinceBackup >= 30)
+    const lembreteDrive = Drive.lembrete({ drive: S.meta.drive, agora: Date.now() });
+    const driveWarn = lembreteDrive.tipo === "falhando"
+      ? `<div class="notice info"><span>${lembreteDrive.texto} Os dados deste celular continuam aqui; veja a ligação com o Drive.</span><span class="actions"><button class="btn small primary" data-act="m-drive">Abrir Drive</button></span></div>` : "";
+    const backupWarn = driveWarn || lembreteDrive.tipo === "nenhum" ? driveWarn : backupOld || (S.meta.lastBackup && newSinceBackup >= 30)
       ? `<div class="notice info"><span>${!S.meta.lastBackup ? "Você ainda não fez backup." : backupOld ? "Seu último backup tem mais de 30 dias." : `Há ${newSinceBackup} lançamentos novos desde o último backup.`} Se o celular for perdido ou formatado, os dados vão junto.</span><span class="actions"><button class="btn small primary" data-act="backup">Fazer backup</button></span></div>` : "";
     const credited = S.txs.filter(t => ids.has(t.cardId) && isBenefitCredit(t) && (t.date || "").startsWith(mk)).reduce((s, t) => s + t.amount, 0);
     return `
@@ -572,6 +575,9 @@
       <div class="menu">
         <button data-act="m-backup"><span class="t">Fazer backup</span><span class="s">Arquivo com cartões, extratos e senhas (as senhas continuam criptografadas).</span></button>
         <button data-act="import"><span class="t">Restaurar backup</span><span class="s">Substitui os dados deste celular pelos do arquivo.</span></button>
+        <button data-act="m-drive"><span class="t">Backup no Drive</span><span class="s">${driveOn() ? "Ligado: o app guarda uma cópia no seu Google Drive sozinho." : "Guarda uma cópia sozinha no seu Google Drive."}</span></button>
+        ${driveOn() ? `<button data-act="drive-save"><span class="t">Salvar no Drive</span><span class="s">${S.meta.drive.ultimo ? "Último: " + new Date(S.meta.drive.ultimo).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + "." : "Ainda não salvou."}</span></button>
+        <button data-act="drive-restore"><span class="t">Restaurar do Drive</span><span class="s">Escolha um backup do Drive para trazer de volta.</span></button>` : ""}
         <button data-act="m-photos"><span class="t">Fotos dos cupons</span><span class="s">Espaço usado e limpeza de fotos antigas.</span></button>
         <button data-act="m-about"><span class="t">Onde ficam os dados</span><span class="s">Como não perder nada ao trocar de celular.</span></button>
       </div>
@@ -2028,12 +2034,125 @@
     try { persisted = await navigator.storage.persisted(); } catch (e) {}
     openSheet(`
       <h3>Onde ficam seus dados</h3>
-      <p>Tudo fica guardado apenas neste celular, dentro do app. Nada é enviado para a internet: nem os cupons, nem as fotos, nem as senhas.</p>
+      <p>Tudo fica guardado apenas neste celular, dentro do app. Nada é enviado para a internet, a menos que você ligue por conta própria o backup no Drive (a cópia vai para o seu Google Drive) ou a leitura com o Gemini (as fotos vão para o Google). As senhas do cofre só saem do celular dentro do backup, e criptografadas.</p>
       <p>Se você desinstalar o app, limpar os dados do Chrome ou trocar de celular, os dados se perdem. Faça backup e guarde o arquivo no Google Drive ou envie para você mesmo.</p>
       <p class="hint">${esc(usage)} ${persisted ? "O Android foi avisado para não apagar estes dados sozinho." : ""}</p>
       <div class="btnrow"><button class="btn primary" id="abBk">Fazer backup agora</button><button class="btn" data-close>Fechar</button></div>`, () => {
       $("abBk").addEventListener("click", backupSheet);
     });
+  }
+
+  async function coletarFotos() {
+    const out = [];
+    for (const r of await IDB.all("receipts")) out.push({ id: r.id, createdAt: r.createdAt, data: await blobToDataURL(r.blob) });
+    return out;
+  }
+
+  // ---------- backup no Drive (opcional; veja js/drive.js e apps-script/backup.gs) ----------
+  const driveOn = () => !!(S.meta.drive && S.meta.drive.ligado && S.meta.drive.url && S.meta.drive.secret);
+  // Gera o backup e manda ao script. Lança Error com texto em português se não der.
+  async function enviarAoDrive() {
+    const d = S.meta.drive, fotos = !!d.fotos;
+    const receipts = fotos ? await coletarFotos() : [];
+    const conteudo = JSON.stringify(Drive.montarBackup({ cards: S.cards, txs: S.txs, meta: S.meta, receipts }, fotos));
+    if (!Drive.cabe(conteudo)) throw new Error("Com as fotos o backup passa do limite do Drive. Salve sem fotos ou apague fotos antigas em Ajustes → Fotos.");
+    await Drive.chamar(d, { acao: "salvar", nome: Drive.nomeArquivo(new Date()), conteudo });
+    const agora = Date.now();
+    await Store.setMeta({ ...S.meta, lastBackup: agora, drive: { ...S.meta.drive, ultimo: agora, ultimoErro: null } });
+  }
+  async function salvarNoDrive() {
+    if (!driveOn()) { driveSheet(); return; }
+    toast("Salvando no Drive…");
+    const ok = await run(enviarAoDrive, "Backup salvo no Drive.");
+    return ok;
+  }
+  // Ao abrir o app: em segundo plano, sem aviso de erro (tenta de novo na próxima abertura).
+  async function driveAutomatico() {
+    if (!driveOn() || !navigator.onLine) return;
+    const d = S.meta.drive;
+    const novos = d.ultimo ? S.txs.filter(t => (t.createdAt || 0) > d.ultimo).length : S.txs.length;
+    if (!Drive.precisaSalvar({ ligado: true, ultimo: d.ultimo, novos, agora: Date.now() })) return;
+    try { await enviarAoDrive(); }
+    catch (e) {
+      console.warn("backup no Drive", e);
+      try { await Store.setMeta({ ...S.meta, drive: { ...S.meta.drive, ultimoErro: Date.now() } }); } catch (e2) {}
+    }
+    if (!S.busy && !$("scrim")) render();
+  }
+  async function restaurarDoDrive() {
+    if (!driveOn()) { driveSheet(); return; }
+    toast("Buscando backups no Drive…");
+    let itens;
+    try { itens = (await Drive.chamar(S.meta.drive, { acao: "listar" })).itens || []; }
+    catch (e) { toast(e.message); return; }
+    if (!itens.length) { toast("Ainda não há backups no Drive."); return; }
+    const fmtTam = b => b >= 1048576 ? (b / 1048576).toFixed(1).replace(".", ",") + " MB" : Math.max(1, Math.round(b / 1024)) + " KB";
+    openSheet(`
+      <h3>Restaurar do Drive</h3>
+      <p class="hint">Escolha o backup. Antes de trocar os dados deste celular, o app pede a sua confirmação.</p>
+      <div class="menu">${itens.map((it, i) => `<button data-i="${i}"><span class="t">${esc(new Date(it.data).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }))}</span><span class="s num">${fmtTam(it.tamanho)}</span></button>`).join("")}</div>
+      <div class="btnrow"><button class="btn" data-close>Cancelar</button></div>`, sheet => {
+      sheet.querySelectorAll("[data-i]").forEach(b => b.addEventListener("click", async () => {
+        b.disabled = true;
+        try {
+          const r = await Drive.chamar(S.meta.drive, { acao: "ler", id: itens[+b.dataset.i].id });
+          importFile(JSON.parse(r.conteudo));
+        } catch (e) { b.disabled = false; toast(e instanceof SyntaxError ? "Este backup do Drive não é válido." : e.message); }
+      }));
+    });
+  }
+  function driveSheet() {
+    const d = S.meta.drive || {};
+    let secret = d.secret || Drive.gerarSegredo();
+    openSheet(`
+      <h3>Backup no Drive</h3>
+      <p class="hint">O Ciclo guarda uma cópia dos seus dados numa pasta do seu Google Drive, sozinho, a cada 7 dias ou 30 lançamentos novos. Se perder o celular, você restaura de lá. É preciso fazer uma vez a configuração abaixo, no computador.</p>
+      <form id="dForm" class="sform" autocomplete="off">
+        <label class="field"><span>Código secreto (copie e use no passo 2)</span>
+          <input id="dSec" type="text" readonly value="${esc(secret)}"></label>
+        <div class="btnrow"><button class="btn small" type="button" id="dCopy">Copiar código</button><button class="btn small" type="button" id="dNew">Gerar outro</button></div>
+        <ol class="hint">
+          <li>No computador, abra script.google.com, crie um projeto e cole o arquivo <b>apps-script/backup.gs</b> do Ciclo.</li>
+          <li>Troque o texto da linha SEGREDO_LOCAL pelo código acima e rode a função <b>configurar</b>.</li>
+          <li>Implante como <b>App da Web</b> (executar como você; acesso: qualquer pessoa) e copie o link.</li>
+          <li>Cole o link aqui e toque em <b>Testar conexão</b>.</li>
+        </ol>
+        <label class="field"><span>Link do script</span><input id="dUrl" type="url" inputmode="url" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(d.url || "")}"></label>
+        <label class="check"><input type="checkbox" id="dOn" ${d.ligado ? "checked" : ""}> <span>Salvar no Drive automaticamente</span></label>
+        <label class="check"><input type="checkbox" id="dFotos" ${d.fotos ? "checked" : ""}> <span>Incluir fotos (o backup fica bem maior e pode passar do limite de 20 MB)</span></label>
+        <p class="hint">Quem tiver o link e o código consegue ler os backups. Não compartilhe os dois. O link e o código ficam só neste celular e não entram no backup.</p>
+        <div class="err" id="dErr"></div>
+        <p class="hint" id="dOk"></p>
+        <div class="btnrow">
+          <button class="btn primary" type="submit" id="dSave">Salvar</button>
+          <button class="btn" type="button" id="dTest">Testar conexão</button>
+          <button class="btn" type="button" data-close>Fechar</button>
+        </div>
+      </form>`, () => {
+      const cfg = () => ({ url: $("dUrl").value.trim(), secret });
+      $("dCopy").addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(secret); toast("Código copiado."); } catch (e) { $("dSec").select(); toast("Selecione e copie o código."); }
+      });
+      $("dNew").addEventListener("click", () => { secret = Drive.gerarSegredo(); $("dSec").value = secret; $("dOk").textContent = "Código novo. Troque também no script e rode “configurar” de novo."; });
+      $("dTest").addEventListener("click", async () => {
+        $("dErr").textContent = ""; $("dOk").textContent = "";
+        if (!/^https:\/\//i.test(cfg().url)) { $("dErr").textContent = "Cole o link do App da Web (começa com https://)."; return; }
+        $("dTest").disabled = true; $("dTest").textContent = "Testando…";
+        try { await Drive.chamar(cfg(), { acao: "listar" }); $("dOk").textContent = "Conectado."; }
+        catch (e) { $("dErr").textContent = e.message; }
+        $("dTest").disabled = false; $("dTest").textContent = "Testar conexão";
+      });
+      $("dForm").addEventListener("submit", async e => {
+        e.preventDefault();
+        const { url } = cfg(), ligado = $("dOn").checked;
+        $("dErr").textContent = "";
+        if (ligado && !/^https:\/\//i.test(url)) { $("dErr").textContent = "Cole o link do App da Web (começa com https://) para ligar."; return; }
+        const drive = { ...d, url, secret, ligado, fotos: $("dFotos").checked };
+        if (ligado && !d.ligado) { drive.ligadoEm = Date.now(); drive.ultimoErro = null; }
+        const ok = await run(() => Store.setMeta({ ...S.meta, drive }), ligado ? "Backup no Drive ligado." : "Configuração salva.");
+        if (ok) { closeSheet(); if (ligado && !d.ligado) driveAutomatico(); }
+      });
+    }, { secret: true });
   }
 
   function backupSheet() {
@@ -2046,10 +2165,8 @@
       $("bkGo").addEventListener("click", async () => {
         $("bkGo").disabled = true; $("bkGo").textContent = "Gerando…";
         try {
-          const data = { app: "ciclo", version: BACKUP_VERSION, exportedAt: new Date().toISOString(), cards: S.cards, txs: S.txs, meta: { vault: S.meta.vault || null }, receipts: [] };
-          if ($("bkPhotos").checked) {
-            for (const r of await IDB.all("receipts")) data.receipts.push({ id: r.id, createdAt: r.createdAt, data: await blobToDataURL(r.blob) });
-          }
+          const fotos = $("bkPhotos").checked;
+          const data = Drive.montarBackup({ cards: S.cards, txs: S.txs, meta: S.meta, receipts: fotos ? await coletarFotos() : [] }, fotos);
           const name = `ciclo-backup-${todayISO()}.json`;
           const file = new File([JSON.stringify(data)], name, { type: "application/json" });
           let shared = false;
@@ -2075,9 +2192,10 @@
     });
   }
 
+  // Aceita o arquivo escolhido ou os dados já lidos (restaurar do Drive).
   async function importFile(file) {
     let data;
-    try { data = JSON.parse(await file.text()); } catch (e) { toast("Este arquivo não é um backup válido."); return; }
+    try { data = typeof file.text === "function" ? JSON.parse(await file.text()) : file; } catch (e) { toast("Este arquivo não é um backup válido."); return; }
     if (!data || !["ciclo", "carteira-vales"].includes(data.app) || !Array.isArray(data.cards) || !Array.isArray(data.txs)) { toast("Este arquivo não é um backup do Ciclo."); return; }
     const when = data.exportedAt ? new Date(data.exportedAt).toLocaleString("pt-BR") : "data desconhecida";
     confirmSheet("Restaurar backup?", `O backup de <b>${esc(when)}</b> tem ${data.cards.length} cartões e ${data.txs.length} lançamentos. Os dados atuais deste celular serão <b>substituídos</b>.`, "Restaurar", async () => {
@@ -2181,6 +2299,9 @@
       case "eye": toggleEye(); break;
       case "install": installApp(); break;
       case "m-backup": backupSheet(); break;
+      case "m-drive": driveSheet(); break;
+      case "drive-save": salvarNoDrive(); break;
+      case "drive-restore": restaurarDoDrive(); break;
       case "m-photos": photosSheet(); break;
       case "m-about": aboutSheet(); break;
       case "m-master": changeMasterSheet(); break;
@@ -2235,6 +2356,7 @@
       history.replaceState({ home: true }, "");
       render();
       setTimeout(() => checkUpdate(false), 1500);
+      setTimeout(driveAutomatico, 3000);
       const acao = new URLSearchParams(location.search).get("acao");
       if (acao && S.cards.length) {
         history.replaceState({ home: true }, "", location.pathname);
