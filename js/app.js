@@ -264,7 +264,7 @@
   // ---------- estado ----------
   const S = {
     cards: [], txs: [], meta: {}, loaded: false,
-    view: { name: "home" }, tab: "home", person: null, periodOffset: 0, busy: false, skipped: new Set(), cardQuery: "", groups: {}, txQuery: "", txLimit: 100,
+    view: { name: "home" }, tab: "home", person: null, periodOffset: 0, gfOffset: 0, gfView: "categorias", busy: false, skipped: new Set(), cardQuery: "", groups: {}, txQuery: "", txLimit: 100,
     key: null, plain: {}, plainSig: {}, reveal: new Set(), lockTimer: null, installEvt: null,
   };
   const $ = id => document.getElementById(id);
@@ -515,12 +515,41 @@
     cartao: svg('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h4"/>'),
   };
 
+  // ---------- gráficos de gastos ----------
+  const periodoDeCartao = (c, n) => periodShift(c, periodAt(c, new Date()), n);
+  // Painel "Gastos do período": offset 0 = período atual, -1 = o anterior... Cada cartão usa o seu período.
+  // nav: botões ‹ › próprios (aba Extrato); na tela do cartão quem navega é o painel "Período".
+  function renderGraficos(cards, offset, nav) {
+    const sel = Graficos.selecionar(S.txs, cards, offset, periodoDeCartao);
+    const atual = Graficos.somarGastos(sel.atual, cards);
+    const ant = Graficos.somarGastos(sel.anterior, cards);
+    const multi = atual.titulares.todos.length > 1;
+    const view = S.gfView === "titulares" && !multi ? "categorias" : (["categorias", "lojas", "titulares"].includes(S.gfView) ? S.gfView : "categorias");
+    const abas = [["categorias", "Categorias"], ["lojas", "Lojas"]].concat(multi ? [["titulares", "Titulares"]] : []);
+    const comp = Graficos.comparar(atual[view], ant[view]);
+    const navHtml = nav ? `
+      <div class="pernav">
+        <button class="iconbtn" data-act="gf-off" data-d="-1" aria-label="Período anterior" ${offset <= -36 ? "disabled" : ""}>‹</button>
+        <span class="p num">${offset === 0 ? "Atual" : (-offset) + "º atrás"}</span>
+        <button class="iconbtn" data-act="gf-off" data-d="1" aria-label="Próximo período" ${offset === 0 ? "disabled" : ""}>›</button>
+      </div>` : "";
+    return `
+      <section class="panel" id="gfPanel">
+        <div class="panel-head"><h2>Gastos do período</h2>${navHtml}</div>
+        ${nav ? `<p class="hint">Período de cada cartão${offset === 0 ? "" : `, ${-offset} ${offset === -1 ? "período" : "períodos"} atrás`}.</p>` : ""}
+        ${atual.total ? `<div class="gf-tabs" role="group" aria-label="Agrupar gastos por">${abas.map(([k, n]) => `<button data-act="gf-view" data-v="${k}" aria-pressed="${view === k}">${n}</button>`).join("")}</div>` : ""}
+        ${Graficos.desenhar(atual[view], brl, esc, comp)}
+        ${atual.total ? `<p class="gf-frase gv">${esc(Graficos.frase(comp, brl))}</p>` : ""}
+      </section>`;
+  }
+
   // ---------- aba Extrato ----------
   function renderExtrato() {
     if (!S.cards.length) return renderHome();
     return `
       <h1 class="page-title">Extrato</h1>
       <div class="toolbar"><input id="txSearch" class="search" type="search" placeholder="Buscar loja, categoria, cartão, titular ou valor" value="${esc(S.txQuery)}" autocomplete="off" aria-label="Buscar no extrato"></div>
+      ${renderGraficos(visibleCards(), S.gfOffset, true)}
       <div id="txArea">${renderTxArea()}</div>`;
   }
   // Lançamentos do extrato conforme a busca da tela (usado na lista e na planilha).
@@ -830,7 +859,7 @@
   }
   function goTab(t) {
     if (t === S.tab && S.view.name !== "card") { window.scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" }); return; }
-    navigate(() => { S.tab = t; S.view = { name: "home" }; render(); });
+    navigate(() => { S.tab = t; S.view = { name: "home" }; S.gfOffset = 0; render(); });
     const st = history.state || {};
     if (t !== "home") whenHistoryIdle(() => st.tab ? history.replaceState({ tab: t }, "") : history.pushState({ tab: t }, ""));
   }
@@ -1135,6 +1164,7 @@
         </div>
         ${quick}
       </section>
+      ${renderGraficos([c], S.periodOffset, false)}
       <section class="panel">
         <div class="panel-head"><h2>Extrato do período</h2><span class="label num">${st.txs.length} lançamentos</span></div>
         ${renderTxList(st.txs.sort(txSort), false)}
@@ -2259,6 +2289,8 @@
         else navigate(() => { S.view = { name: "home" }; render(); }, "back");
         break;
       case "person": S.person = el.dataset.all ? null : el.dataset.p; render(); break;
+      case "gf-view": S.gfView = el.dataset.v; render(); break;
+      case "gf-off": S.gfOffset = Math.max(-36, Math.min(0, S.gfOffset + Number(el.dataset.d))); render(); break;
       case "per": S.periodOffset = Math.min(0, S.periodOffset + Number(el.dataset.d)); render(); break;
       case "new-card": cardSheet(null); break;
       case "edit-card": card && cardSheet(card); break;

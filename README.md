@@ -22,6 +22,7 @@ Ciclo controla o saldo dos cartões de vale-alimentação, vale-refeição e mul
   - O cartão que pagou é identificado pelo final, pelo saldo impresso ou pela loja onde ele já foi usado.
 - **Pagamento dividido:** uma compra pode usar vários vales e também crédito, débito, Pix ou dinheiro.
 - **Extrato:** com busca e com os totais de gastos e créditos.
+- **Gráficos de gastos:** em cada cartão e na aba Extrato, barras por categoria, loja e titular no período, com a diferença para o período anterior (ex.: "R$ 120,00 a mais em Mercado"). Desenhados no próprio app, funcionam offline.
 - **Cofre de senhas:** a senha do cartão e o login do app do emissor ficam criptografados (AES-256-GCM, chave derivada da senha mestra com PBKDF2). O cofre tranca sozinho.
 - **Privacidade:** o botão de olho esconde os valores. O tema pode ser automático, claro ou escuro.
 - **Backup e restauração:** por arquivo, ou sozinho numa pasta do seu Google Drive (opcional, veja abaixo). As senhas continuam criptografadas dentro dele.
@@ -84,6 +85,7 @@ js/gemini.js          leitura de cupons e cartões pelo Gemini (opcional)
 js/drive.js           backup no Google Drive (opcional): montagem do backup, regras de quando salvar e chamada ao script
 apps-script/          script que a usuária cola no Google Apps Script (não é usado pelo app)
 js/issuers.js         emissores de cartão (nome, cor, sigla e como reconhecer): um emissor novo entra só aqui
+js/graficos.js        gráficos de gastos por categoria, loja e titular (SVG, sem biblioteca)
 js/match.js           qual cartão pagou o cupom e aviso de cartão que não está na carteira
 tests/                testes automáticos da leitura de cupons e da escolha do cartão
 fonts/                fonte Outfit, embutida
@@ -125,7 +127,7 @@ Com o Node.js 18 ou mais novo, nesta pasta:
 node --test
 ```
 
-Os testes ficam em `tests/` e não precisam de instalação. Eles cobrem a leitura de cupons pelo leitor do celular (`tests/cupons/`, textos de cupons reais anonimizados), a conversão das respostas do Gemini (`tests/gemini/`, respostas salvas, sem chamar o Google) e a escolha do cartão. Quando um defeito de leitura for corrigido, acrescente o cupom ou a resposta que o mostrou.
+Os testes ficam em `tests/` e não precisam de instalação. Eles cobrem a leitura de cupons pelo leitor do celular (`tests/cupons/`, textos de cupons reais anonimizados), a conversão das respostas do Gemini (`tests/gemini/`, respostas salvas, sem chamar o Google) , a escolha do cartão e os gráficos de gastos (`tests/graficos.test.js`, dados fictícios). Quando um defeito de leitura for corrigido, acrescente o cupom ou a resposta que o mostrou.
 
 ## Testar no computador
 
