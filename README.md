@@ -86,6 +86,7 @@ js/drive.js           backup no Google Drive (opcional): montagem do backup, reg
 apps-script/          script que a usuária cola no Google Apps Script (não é usado pelo app)
 js/issuers.js         emissores de cartão (nome, cor, sigla e como reconhecer): um emissor novo entra só aqui
 js/graficos.js        gráficos de gastos por categoria, loja e titular (SVG, sem biblioteca)
+js/credito.js         aviso do dia do crédito: cartões com crédito hoje ou nos próximos dias, agenda e texto da notificação
 js/match.js           qual cartão pagou o cupom e aviso de cartão que não está na carteira
 tests/                testes automáticos da leitura de cupons e da escolha do cartão
 fonts/                fonte Outfit, embutida

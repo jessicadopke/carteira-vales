@@ -15,6 +15,7 @@ const FILES = [
   "js/drive.js",
   "js/csv.js",
   "js/graficos.js",
+  "js/credito.js",
   "icons/icon-192.png",
   "icons/icon-512.png",
   "icons/maskable-512.png",
