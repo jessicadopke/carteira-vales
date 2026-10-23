@@ -373,6 +373,7 @@
       view.innerHTML = S.tab === "extrato" ? renderExtrato() : S.tab === "cofre" ? renderCofre() : S.tab === "ajustes" ? renderAjustes() : renderHome();
     }
     if (S.cards.length) decryptCards();
+    syncAgenda();
   }
   // Troca de tela com transição: animação nativa do Chrome quando existe, senão entrada suave dos blocos.
   const reduceMotion = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -449,6 +450,72 @@
     if (dayModeOf(card) === "fixed") await Store.patch("cards", card.id, { lastCreditMonth: periodAt(card, d).key });
   }
 
+  // ---------- créditos previstos: hoje e próximos dias ----------
+  // Cartões visíveis com crédito de hoje até 3 dias, menos os que ela já adiou nesta sessão.
+  const previstos = cards => Credito.proximos(cards, new Date(), 3, S.txs).filter(p => !S.skipped.has(p.cardId));
+  const previstosHoje = cards => previstos(cards).filter(p => p.faltam === 0);
+  function renderPrevistos(cards) {
+    const list = previstos(cards);
+    if (!list.length) return "";
+    const hoje = list.filter(p => p.faltam === 0);
+    const emLote = hoje.length > 1 && hoje.every(p => pendingCredits(cards).some(x => x.c.id === p.cardId));
+    const rows = list.map(p => {
+      const c = cardById(p.cardId);
+      const quando = `${p.estimado ? "~" : ""}${Credito.rotulo(p.faltam)}`;
+      const amt = expectedAmount(c);
+      const valor = amountModeOf(c) === "variable"
+        ? `${amt > 0 ? `<span class="num">${brl(amt)}</span> · ` : ""}valor varia`
+        : `<span class="num">${brl(amt)}</span>`;
+      const acoes = p.faltam === 0 && !emLote
+        ? `<span class="actions"><button class="btn small primary" data-act="credito-prev-confirm" data-id="${c.id}">Confirmar valor</button><button class="btn small ghost" data-act="credit-skip" data-id="${c.id}">Ainda não veio</button></span>` : "";
+      return `<div class="prev-row"><span><b>${esc(c.name)}</b>${c.holder ? ` (${esc(c.holder)})` : ""}: <b>${quando}</b> · ${valor}</span>${acoes}</div>`;
+    }).join("");
+    const lote = emLote ? `<span class="actions"><button class="btn small primary" data-act="credit-batch">Confirmar valores</button><button class="btn small ghost" data-act="credit-later">Depois</button></span>` : "";
+    return `<div class="notice prev"><div class="prev-title">Créditos previstos</div>${rows}${lote}</div>`;
+  }
+
+  // ---------- aviso por notificação (experimento) ----------
+  // A agenda dos próximos 14 dias (só data e quantidade) fica em meta.avisoCredito, fora do backup, para o service worker ler.
+  function syncAgenda() {
+    const a = S.meta && S.meta.avisoCredito;
+    if (!S.loaded || !a || !a.ligado) return;
+    const datas = Credito.montarAgenda(S.cards, new Date(), S.txs);
+    if (JSON.stringify(datas) === JSON.stringify(a.datas || [])) return;
+    S.meta = { ...S.meta, avisoCredito: { ...a, datas } };
+    IDB.put("meta", S.meta, "main").catch(e => console.warn("agenda do aviso", e));
+  }
+  // Só mostra o interruptor quando o aparelho permite: periodicSync (Chrome) e app instalado.
+  const avisoSuportado = () => !!S.periodicOk && "Notification" in window;
+  async function avisoLigar() {
+    try {
+      if (!avisoSuportado()) { toast("Seu aparelho ou navegador não permite este aviso."); return; }
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { toast("Sem permissão para avisar. Ative as notificações do Ciclo nas configurações do celular e tente de novo."); return; }
+      const reg = await navigator.serviceWorker.ready;
+      await reg.periodicSync.register("ciclo-credito", { minInterval: 12 * 3600 * 1000 });
+      await Store.setMeta({ ...S.meta, avisoCredito: { ligado: true, datas: Credito.montarAgenda(S.cards, new Date(), S.txs) } });
+      toast("Aviso ligado. Ele pode atrasar ou não chegar; confie no quadro do Início.");
+    } catch (e) {
+      console.warn("aviso de crédito", e);
+      toast("Não consegui ligar o aviso neste aparelho. O quadro do Início continua funcionando.");
+    }
+    render();
+  }
+  async function avisoDesligar() {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      if (reg.periodicSync) await reg.periodicSync.unregister("ciclo-credito");
+    } catch (e) { console.warn("aviso de crédito", e); }
+    try { await Store.setMeta({ ...S.meta, avisoCredito: { ligado: false, datas: [] } }); } catch (e) { console.warn(e); }
+    toast("Aviso desligado.");
+    render();
+  }
+  function renderAvisoCredito() {
+    const on = !!(S.meta.avisoCredito && S.meta.avisoCredito.ligado);
+    if (!avisoSuportado()) return `<div class="menu"><div class="menu-note"><span class="t">Aviso de crédito (experimento)</span><span class="s">Seu aparelho ou navegador não permite este aviso. O quadro do Início continua funcionando.</span></div></div>`;
+    return `<div class="menu"><button data-act="${on ? "credito-aviso-desligar" : "credito-aviso-ligar"}"><span class="t">Aviso de crédito (experimento): ${on ? "ligado" : "desligado"}</span><span class="s">O Android decide quando o app roda em segundo plano; o aviso pode atrasar ou não chegar. Confie no quadro do Início. Toque para ${on ? "desligar" : "ligar"}.</span></button></div>`;
+  }
+
   function renderHome() {
     if (S.cards.length === 0) {
       return `
@@ -494,7 +561,8 @@
         </div>
       </section>
       ${peopleBar}
-      ${renderCreditNotices(pendingCredits(cards))}
+      ${renderPrevistos(cards)}
+      ${renderCreditNotices(pendingCredits(cards).filter(({ c }) => !previstosHoje(cards).some(p => p.cardId === c.id)))}
       ${renderUpdateNotice()}
       ${backupWarn}
       ${renderCardToolbar()}
@@ -634,6 +702,8 @@
       <div class="menu">
         <button data-act="m-gemini"><span class="t">Gemini</span><span class="s">${S.meta.gemini && S.meta.gemini.enabled && S.meta.gemini.key ? "Ligado: cupons e cartões são lidos pelo Gemini, com o leitor do celular como reserva." : "Desligado: cupons e cartões são lidos só no celular, sem internet."}</span></button>
       </div>
+      <div class="section-head"><h2>Avisos</h2></div>
+      ${renderAvisoCredito()}
       <div class="section-head"><h2>Aparência</h2></div>
       <div class="menu">
         <button data-act="m-theme"><span class="t">Tema</span><span class="s">Agora: ${THEMES[themeNow()].toLowerCase()}. ${THEME_HINT[themeNow()]}</span></button>
@@ -2332,6 +2402,9 @@
         else creditSheet(card);
         break;
       }
+      case "credito-prev-confirm": card && creditSheet(card); break;
+      case "credito-aviso-ligar": avisoLigar(); break;
+      case "credito-aviso-desligar": avisoDesligar(); break;
       case "credit-skip": S.skipped.add(id); render(); break;
       case "credit-batch": creditBatchSheet(); break;
       case "credit-later": pendingCredits(visibleCards()).forEach(({ c }) => S.skipped.add(c.id)); render(); break;
@@ -2425,5 +2498,11 @@
 
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
     navigator.serviceWorker.register("sw.js").catch(e => console.warn("service worker", e));
+    // O aviso de crédito por notificação só aparece com periodicSync e o app instalado.
+    navigator.serviceWorker.ready.then(reg => {
+      const instalado = window.matchMedia && matchMedia("(display-mode: standalone)").matches;
+      S.periodicOk = "periodicSync" in reg && instalado;
+      if (S.periodicOk && S.loaded && S.tab === "ajustes") render();
+    }).catch(e => console.warn("service worker", e));
   }
 })();

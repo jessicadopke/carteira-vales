@@ -1,6 +1,8 @@
 // Guarda o app no celular para abrir sem internet.
 // Ao publicar uma versão nova, mude VERSION para o celular baixar os arquivos atualizados.
 const VERSION = "ciclo-1.10.0";
+importScripts("js/credito.js");
+
 const FILES = [
   "./",
   "index.html",
@@ -57,4 +59,47 @@ self.addEventListener("fetch", e => {
       })
       .catch(() => caches.match(key, { ignoreSearch: true }))
   );
+});
+
+// Aviso do dia do crédito (experimento): o Chrome decide quando roda, sem garantia.
+// O app grava em meta.avisoCredito só datas e contagem; aqui só se lê, sem calcular nada nem mudar o banco.
+function lerAgenda() {
+  return new Promise((ok, falha) => {
+    const abrir = indexedDB.open("ciclo");
+    // banco ainda não existe: não cria nada, só desiste
+    abrir.onupgradeneeded = () => { abrir.transaction.abort(); };
+    abrir.onerror = () => falha(abrir.error);
+    abrir.onsuccess = () => {
+      const db = abrir.result;
+      try {
+        if (!db.objectStoreNames.contains("meta")) { db.close(); return ok(null); }
+        const q = db.transaction("meta", "readonly").objectStore("meta").get("main");
+        q.onsuccess = () => { db.close(); ok(q.result && q.result.avisoCredito || null); };
+        q.onerror = () => { db.close(); falha(q.error); };
+      } catch (e) { db.close(); falha(e); }
+    };
+  });
+}
+async function avisarCredito() {
+  const a = await lerAgenda();
+  if (!a || !a.ligado) return;
+  const hoje = new Date();
+  const texto = Credito.avisoDeHoje(a.datas, hoje);
+  if (!texto) return;
+  const tag = "ciclo-credito-" + hoje.getFullYear() + "-" + String(hoje.getMonth() + 1).padStart(2, "0") + "-" + String(hoje.getDate()).padStart(2, "0");
+  // a tag evita repetir: se já avisou hoje, não avisa de novo
+  const jaAvisou = await self.registration.getNotifications({ tag });
+  if (jaAvisou.length) return;
+  await self.registration.showNotification("Ciclo", { body: texto, tag, icon: "icons/icon-192.png", badge: "icons/icon-192.png" });
+}
+self.addEventListener("periodicsync", e => {
+  if (e.tag !== "ciclo-credito") return;
+  e.waitUntil(avisarCredito().catch(err => console.warn("aviso de crédito", err)));
+});
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(lista => {
+    const aberta = lista.find(c => "focus" in c);
+    return aberta ? aberta.focus() : self.clients.openWindow("./");
+  }));
 });
