@@ -13,6 +13,7 @@ const FILES = [
   "js/receipt.js",
   "js/gemini.js",
   "js/drive.js",
+  "js/csv.js",
   "icons/icon-192.png",
   "icons/icon-512.png",
   "icons/maskable-512.png",

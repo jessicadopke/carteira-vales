@@ -523,14 +523,33 @@
       <div class="toolbar"><input id="txSearch" class="search" type="search" placeholder="Buscar loja, categoria, cartão, titular ou valor" value="${esc(S.txQuery)}" autocomplete="off" aria-label="Buscar no extrato"></div>
       <div id="txArea">${renderTxArea()}</div>`;
   }
-  function renderTxArea() {
+  // Lançamentos do extrato conforme a busca da tela (usado na lista e na planilha).
+  function extratoFiltrado() {
     const words = fold(S.txQuery.trim()).split(/\s+/).filter(Boolean);
-    const list = S.txs.filter(t => {
+    return S.txs.filter(t => {
       if (!words.length) return true;
       const c = cardById(t.cardId);
       const hay = fold([t.desc, t.cat, c && c.name, c && c.holder, c && c.issuer, fmtInput(t.amount), (t.date || "").split("-").reverse().join("/"), t.kind === "credit" ? "credito" : "gasto"].join(" "));
       return words.every(w => hay.includes(w));
     }).sort(txSort);
+  }
+  async function exportarPlanilha() {
+    const list = extratoFiltrado();
+    if (!list.length) { toast("Nada para exportar."); return; }
+    const name = `ciclo-extrato-${todayISO()}.csv`;
+    const file = new File([Csv.montar(list, S.cards)], name, { type: "text/csv;charset=utf-8" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: "Extrato do Ciclo" }); toast("Planilha enviada."); return; }
+      catch (e) { if (e.name === "AbortError") return; }
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(file); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    toast("Planilha salva em Downloads.");
+  }
+  function renderTxArea() {
+    const list = extratoFiltrado();
     const spent = list.filter(t => t.kind === "debit" && t.source !== "ajuste").reduce((s, t) => s + t.amount, 0);
     const got = list.filter(isBenefitCredit).reduce((s, t) => s + t.amount, 0);
     const shown = list.slice(0, S.txLimit);
@@ -540,7 +559,8 @@
         <div class="tot"><span class="k">Créditos</span><span class="v num in">${brl(got)}</span></div>
       </div>
       <section class="panel">${list.length ? renderTxList(shown, true) : `<div class="empty">Nada encontrado para “${esc(S.txQuery)}”.</div>`}</section>
-      ${list.length > shown.length ? `<button class="btn more" data-act="more-tx">Mostrar mais (${list.length - shown.length} restantes)</button>` : ""}`;
+      ${list.length > shown.length ? `<button class="btn more" data-act="more-tx">Mostrar mais (${list.length - shown.length} restantes)</button>` : ""}
+      ${list.length ? `<button class="btn more" data-act="export-csv">Exportar planilha</button>` : ""}`;
   }
 
   // ---------- aba Cofre ----------
@@ -2299,6 +2319,7 @@
       case "eye": toggleEye(); break;
       case "install": installApp(); break;
       case "m-backup": backupSheet(); break;
+      case "export-csv": exportarPlanilha(); break;
       case "m-drive": driveSheet(); break;
       case "drive-save": salvarNoDrive(); break;
       case "drive-restore": restaurarDoDrive(); break;
