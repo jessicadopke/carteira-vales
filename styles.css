@@ -239,6 +239,11 @@ body.hide-values :is(.big, .bal, .rbal, .tx .a, .stat .v, .person .v, .gmeta, .h
 /* ---------- avisos ---------- */
 .notice { background: var(--warn-bg); color: var(--warn-fg); border: 1px solid var(--warn-line); border-radius: var(--r); padding: 12px 14px; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; font-size: 14px; }
 .notice.info { background: var(--info-bg); color: var(--fg); border-color: color-mix(in srgb, var(--accent) 22%, var(--line)); }
+.notice.prev { display: block; }
+.notice.prev .prev-title { font-weight: 700; margin-bottom: 6px; }
+.notice.prev .prev-row { display: flex; gap: 8px 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding: 6px 0; border-top: 1px solid var(--warn-line); }
+.notice.prev > .actions { margin-top: 8px; }
+.menu-note { padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
 .notice .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
 /* ---------- botões ---------- */
