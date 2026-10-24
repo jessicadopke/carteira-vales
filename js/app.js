@@ -1,5 +1,5 @@
 import { $, brl, CATS, delta, esc, explain, fmtDay, fmtInput, fold, ICON, isoDay, ISSUERS, issuerStyle, MANY, midnight, monthKey, MONTHS, parseMoney, shortDate, toast, todayISO, TYPES, uid } from "./app/util.js";
-import { cardById, holders, lastTxDate, S, sortedCards, txSort, visibleCards } from "./app/estado.js";
+import { cardById, config, holders, lastTxDate, S, sortedCards, txSort, ui, visibleCards } from "./app/estado.js";
 import { b64, deriveKey, hasCrypto, seal, unseal } from "./app/cripto.js";
 import { amountModeOf, benefitCredits, creditInfo, creditWhen, dayModeOf, expectedAmount, fromISO, isBenefitCredit, perDayOf, periodAt, periodLabel, periodShift, periodStats } from "./app/periodos.js";
 import { askPersist, IDB, migrateOldDb, Store } from "./app/armazenamento.js";
@@ -8,6 +8,7 @@ import { askPersist, IDB, migrateOldDb, Store } from "./app/armazenamento.js";
   "use strict";
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
   const APP_VERSION = "1.11.0";
+  config.APP_VERSION = APP_VERSION;
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
 
@@ -426,12 +427,12 @@ import { askPersist, IDB, migrateOldDb, Store } from "./app/armazenamento.js";
       <div class="section-head"><h2>Sobre o app</h2></div>
       <div class="menu">
         ${S.updateAvailable
-          ? `<button data-act="update-now"><span class="t">Atualizar para a versão ${esc(S.updateAvailable)}</span><span class="s">Você está na ${APP_VERSION}. Seus cartões, extratos e senhas não são afetados.</span></button>`
-          : `<button data-act="update-check"><span class="t">Buscar atualização</span><span class="s">Versão instalada: ${APP_VERSION}${S.lastUpdateCheck ? ` · verificado às ${new Date(S.lastUpdateCheck).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : ""}.</span></button>`}
+          ? `<button data-act="update-now"><span class="t">Atualizar para a versão ${esc(S.updateAvailable)}</span><span class="s">Você está na ${config.APP_VERSION}. Seus cartões, extratos e senhas não são afetados.</span></button>`
+          : `<button data-act="update-check"><span class="t">Buscar atualização</span><span class="s">Versão instalada: ${config.APP_VERSION}${S.lastUpdateCheck ? ` · verificado às ${new Date(S.lastUpdateCheck).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : ""}.</span></button>`}
         <button data-act="update-force"><span class="t">Recarregar o app</span><span class="s">Baixa de novo todos os arquivos do app. Use se algo parecer desatualizado.</span></button>
         ${S.installEvt ? `<button data-act="install"><span class="t">Instalar o app</span><span class="s">Ícone na tela inicial, tela cheia e uso sem internet.</span></button>` : ""}
       </div>
-      <p class="foot num">Ciclo · do crédito ao próximo crédito · versão ${APP_VERSION}</p>`;
+      <p class="foot num">Ciclo · do crédito ao próximo crédito · versão ${config.APP_VERSION}</p>`;
   }
 
   // ---------- tema: automático (segue o celular), claro ou escuro ----------
@@ -558,8 +559,8 @@ import { askPersist, IDB, migrateOldDb, Store } from "./app/armazenamento.js";
       const v = String((await res.json()).version || "");
       const before = S.updateAvailable;
       S.lastUpdateCheck = Date.now();
-      S.updateAvailable = newerThan(v, APP_VERSION) ? v : null;
-      if (manual && !S.updateAvailable) toast(`Você já está na versão mais recente (${APP_VERSION}).`);
+      S.updateAvailable = newerThan(v, config.APP_VERSION) ? v : null;
+      if (manual && !S.updateAvailable) toast(`Você já está na versão mais recente (${config.APP_VERSION}).`);
       if (S.loaded && !$("scrim") && before !== S.updateAvailable) render();
       return S.updateAvailable;
     } catch (e) {
@@ -581,7 +582,7 @@ import { askPersist, IDB, migrateOldDb, Store } from "./app/armazenamento.js";
   }
   function renderUpdateNotice() {
     if (!S.updateAvailable) return "";
-    return `<div class="notice info"><span>A versão <b class="num">${esc(S.updateAvailable)}</b> do Ciclo está disponível (você está na ${APP_VERSION}).</span><span class="actions"><button class="btn small primary" data-act="update-now">Atualizar</button></span></div>`;
+    return `<div class="notice info"><span>A versão <b class="num">${esc(S.updateAvailable)}</b> do Ciclo está disponível (você está na ${config.APP_VERSION}).</span><span class="actions"><button class="btn small primary" data-act="update-now">Atualizar</button></span></div>`;
   }
 
   // ---------- leitura de cartão por foto ----------
@@ -628,7 +629,7 @@ import { askPersist, IDB, migrateOldDb, Store } from "./app/armazenamento.js";
         <button class="qa" data-q="cartao">${ICON.cartao}Cartão</button>
       </div>
       <button class="linkbtn" data-q="galeria">Ler cupom de uma foto da galeria</button>`, sheet => {
-      sheetCleanup = () => $("plusBtn").classList.remove("open");
+      ui.sheetCleanup = () => $("plusBtn").classList.remove("open");
       sheet.querySelectorAll("[data-q]").forEach(b => b.addEventListener("click", () => {
         const q = b.dataset.q;
         if (q === "cupom") { closeSheet(); openCamera(cardId); }
@@ -956,7 +957,6 @@ import { askPersist, IDB, migrateOldDb, Store } from "./app/armazenamento.js";
   }
 
   // ---------- folhas (formulários) ----------
-  let sheetCleanup = null;
   // Histórico: cada folha aberta e cada cartão aberto ganham uma entrada, para o "voltar" do Android funcionar.
   // Quando o próprio app chama history.back(), o popstate seguinte é só a confirmação disso.
   const hist = { pending: false, after: [] };
@@ -980,7 +980,7 @@ import { askPersist, IDB, migrateOldDb, Store } from "./app/armazenamento.js";
   }
   // keepHistory: não mexe no histórico (o "voltar" já foi usado). instant: troca de folha, sem animação de saída.
   function closeSheet(keepHistory, instant) {
-    if (sheetCleanup) { const f = sheetCleanup; sheetCleanup = null; f(); }
+    if (ui.sheetCleanup) { const f = ui.sheetCleanup; ui.sheetCleanup = null; f(); }
     const scrim = $("scrim");
     if (scrim) {
       if (instant || reduceMotion()) scrim.remove();
@@ -1399,7 +1399,7 @@ import { askPersist, IDB, migrateOldDb, Store } from "./app/armazenamento.js";
       <img class="receipt-img" src="${url}" alt="Foto do cupom">
       <div id="scanBody">${loaderHTML}</div>`);
     const ctl = window.AbortController ? new AbortController() : null;
-    sheetCleanup = () => { alive = false; ctl && ctl.abort(); URL.revokeObjectURL(url); scanQueue.length = 0; };
+    ui.sheetCleanup = () => { alive = false; ctl && ctl.abort(); URL.revokeObjectURL(url); scanQueue.length = 0; };
     const stored = shrink(file);
     const bindStop = () => $("scanStop").addEventListener("click", async () => { alive = false; ctl && ctl.abort(); reviewForm(sheet, await stored, presetCardId, null, "Preencha os dados do cupom.", ""); });
     bindStop();
@@ -1480,7 +1480,7 @@ import { askPersist, IDB, migrateOldDb, Store } from "./app/armazenamento.js";
       const prefix = geminiFail ? `Gemini: ${geminiFail} A foto foi lida pelo leitor do celular. ` : "";
       reviewForm(sheet, await stored, presetCardId, parsed, empty ? prefix + "Não encontrei valores nesta foto. Confira se o cupom está inteiro, reto e bem iluminado, ou preencha à mão." : (prefix ? prefix + "Confira os valores com atenção." : null), text);
       const again = sheet.querySelector("#rNoCrop");
-      if (again) again.addEventListener("click", () => { sheetCleanup = null; scanOne(file, presetCardId, { semRecorte: true }); });
+      if (again) again.addEventListener("click", () => { ui.sheetCleanup = null; scanOne(file, presetCardId, { semRecorte: true }); });
     } catch (e) {
       console.error(e);
       if (!alive || !$("scanBody")) return;
@@ -1842,7 +1842,7 @@ import { askPersist, IDB, migrateOldDb, Store } from "./app/armazenamento.js";
     ["rSaldo", "rDate"].forEach(id => $(id).addEventListener("input", () => { state.dupOk = false; syncUse(); }));
     split.onChange(() => { state.dupOk = false; syncUse(); });
     syncUse();
-    const finish = () => { const q = scanQueue.splice(0); sheetCleanup = null; closeSheet(); if (q.length) { scanQueue.push(...q); setTimeout(nextScan, 50); } };
+    const finish = () => { const q = scanQueue.splice(0); ui.sheetCleanup = null; closeSheet(); if (q.length) { scanQueue.push(...q); setTimeout(nextScan, 50); } };
     $("rSkip").addEventListener("click", finish);
     $("rForm").addEventListener("submit", async e => {
       e.preventDefault();
@@ -1891,7 +1891,7 @@ import { askPersist, IDB, migrateOldDb, Store } from "./app/armazenamento.js";
       <p class="hint num">${esc(fmtDay(tx.date))} · ${brl(tx.amount)}${typeof tx.reportedBalance === "number" ? ` · saldo no cupom ${brl(tx.reportedBalance)}` : ""}</p>
       ${url ? `<img class="receipt-full" src="${url}" alt="Foto do cupom">` : `<p class="hint">A foto deste cupom não está mais no aparelho.</p>`}
       <div class="btnrow"><button class="btn" data-close>Fechar</button></div>`);
-    if (url) sheetCleanup = () => URL.revokeObjectURL(url);
+    if (url) ui.sheetCleanup = () => URL.revokeObjectURL(url);
   }
 
   // ---------- backup ----------
