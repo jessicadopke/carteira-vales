@@ -13,6 +13,7 @@ const FILES = [
   "js/app/util.js",
   "js/app/estado.js",
   "js/app/cripto.js",
+  "js/app/periodos.js",
   "js/issuers.js",
   "js/match.js",
   "js/recorte.js",
