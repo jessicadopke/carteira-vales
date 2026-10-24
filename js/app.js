@@ -1,5 +1,6 @@
 import { $, brl, CATS, delta, esc, explain, fmtDay, fmtInput, fold, ICON, isoDay, ISSUERS, issuerStyle, MANY, midnight, mkDate, monthKey, MONTHS, parseMoney, shortDate, toast, todayISO, TYPES, uid } from "./app/util.js";
 import { cardById, holders, lastTxDate, S, sortedCards, txSort, visibleCards } from "./app/estado.js";
+import { b64, deriveKey, hasCrypto, seal, unseal } from "./app/cripto.js";
 
 (() => {
   "use strict";
@@ -128,24 +129,6 @@ import { cardById, holders, lastTxDate, S, sortedCards, txSort, visibleCards } f
     if (!ci) return "";
     if (ci.overdue) return "crédito previsto: já deveria ter caído";
     return `crédito em ${ci.estimated ? "~" : ""}${ci.calDays} ${ci.calDays === 1 ? "dia" : "dias"}`;
-  }
-
-  // ---------- criptografia do cofre ----------
-  const b64 = buf => { let s = ""; const a = new Uint8Array(buf); for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s); };
-  const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
-  const hasCrypto = !!(window.crypto && crypto.subtle);
-  async function deriveKey(pass, saltB64) {
-    const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(pass), "PBKDF2", false, ["deriveKey"]);
-    return crypto.subtle.deriveKey({ name: "PBKDF2", salt: unb64(saltB64), iterations: 310000, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
-  }
-  async function seal(key, obj) {
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(obj)));
-    return { iv: b64(iv), ct: b64(ct) };
-  }
-  async function unseal(key, box) {
-    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(box.iv) }, key, unb64(box.ct));
-    return JSON.parse(new TextDecoder().decode(pt));
   }
 
   // ---------- armazenamento no aparelho (IndexedDB) ----------
