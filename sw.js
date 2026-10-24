@@ -10,6 +10,7 @@ const FILES = [
   "fonts/outfit-latin.woff2",
   "manifest.webmanifest",
   "js/app.js",
+  "js/app/util.js",
   "js/issuers.js",
   "js/match.js",
   "js/recorte.js",

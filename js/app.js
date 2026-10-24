@@ -1,52 +1,11 @@
+import { $, brl, CATS, delta, esc, explain, fmtDay, fmtInput, fold, ICON, isoDay, ISSUERS, issuerStyle, MANY, midnight, mkDate, monthKey, MONTHS, parseMoney, shortDate, toast, todayISO, TYPES, uid } from "./app/util.js";
+
 (() => {
   "use strict";
-  // ---------- constantes e utilidades ----------
-  const TYPES = {
-    alimentacao: { label: "Alimentação", color: "var(--t-alim)" },
-    refeicao: { label: "Refeição", color: "var(--t-ref)" },
-    flex: { label: "Multibenefício", color: "var(--t-flex)" },
-    outro: { label: "Outro voucher", color: "var(--t-outro)" },
-  };
-  // Emissores (nome, cor e sigla) vêm de issuers.js
-  const ISSUERS = Issuers.NAMES;
-  const ISSUER_STYLE = Issuers.STYLE;
-  const issuerStyle = c => ISSUER_STYLE[c.issuer] || ISSUER_STYLE.Outro;
-  const fold = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-  const MANY = 12; // a partir daqui os grupos por titular começam fechados
-  const CATS = ["Mercado", "Restaurante", "Padaria", "Delivery", "Lanche", "Feira", "Outros"];
-  const MONTHS = ["janeiro","fevereiro","março","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
   // Versão do app (SemVer: MAJOR.MINOR.PATCH). Ao mudar, atualize também CHANGELOG.md e VERSION em sw.js.
   const APP_VERSION = "1.11.0";
   const LOCK_MS = 5 * 60 * 1000;
   const BACKUP_VERSION = 1;
-
-  const brl = c => (c < 0 ? "−" : "") + "R$ " + (Math.abs(c) / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const esc = s => String(s ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
-  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-  const pad = n => String(n).padStart(2, "0");
-  const isoDay = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const monthKey = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
-  const todayISO = () => isoDay(new Date());
-  const midnight = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const mkDate = (y, m, d) => new Date(y, m, Math.min(d, new Date(y, m + 1, 0).getDate()));
-  const shortDate = d => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(".", "");
-  function parseMoney(str) {
-    let s = String(str ?? "").replace(/[R$\s]/g, "");
-    if (!s) return NaN;
-    if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
-    const n = Number(s);
-    return isFinite(n) ? Math.round(n * 100) : NaN;
-  }
-  const fmtInput = c => (c / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  function fmtDay(iso) {
-    const [y, m, d] = iso.split("-").map(Number);
-    const dt = new Date(y, m - 1, d);
-    const diff = Math.round((midnight(new Date()) - dt) / 86400000);
-    if (diff === 0) return "Hoje";
-    if (diff === 1) return "Ontem";
-    return dt.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short", year: dt.getFullYear() !== new Date().getFullYear() ? "numeric" : undefined });
-  }
-  const delta = t => t.kind === "debit" ? -t.amount : t.amount;
 
   // ---------- crédito do benefício: fixo ou variável ----------
   // dayMode: "fixed" (todo dia X), "variable" (cai em dias diferentes) ou "none" (não controlar).
@@ -267,19 +226,6 @@
     view: { name: "home" }, tab: "home", person: null, periodOffset: 0, gfOffset: 0, gfView: "categorias", busy: false, skipped: new Set(), cardQuery: "", groups: {}, txQuery: "", txLimit: 100,
     key: null, plain: {}, plainSig: {}, reveal: new Set(), lockTimer: null, installEvt: null,
   };
-  const $ = id => document.getElementById(id);
-
-  function toast(msg) {
-    const el = document.createElement("div");
-    el.className = "toast"; el.setAttribute("role", "status"); el.textContent = msg;
-    $("toastRoot").replaceChildren(el);
-    setTimeout(() => el.remove(), 2800);
-  }
-  function explain(err) {
-    if (err && err.name === "QuotaExceededError") return "O celular está sem espaço para o app. Apague fotos de cupons antigos ou libere espaço.";
-    return "Não foi possível salvar. Tente de novo.";
-  }
-
   const cardById = id => S.cards.find(c => c.id === id);
   const sortedCards = () => [...S.cards].sort((a, b) => (a.holder || "").localeCompare(b.holder || "", "pt-BR") || (a.createdAt || 0) - (b.createdAt || 0));
   const visibleCards = () => sortedCards().filter(c => S.person === null || (c.holder || "") === S.person);
@@ -572,16 +518,6 @@
         ${renderTxList(recent, true)}
       </section>`;
   }
-
-  // ---------- ícones ----------
-  const svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
-  const ICON = {
-    gasto: svg('<path d="M7 17 17 7M9 7h8v8"/>'),
-    credito: svg('<path d="M17 7 7 17M15 17H7V9"/>'),
-    cupom: svg('<path d="M4 8a2 2 0 0 1 2-2h1.5l1.5-2h6l1.5 2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><circle cx="12" cy="12.5" r="3.5"/>'),
-    corrigir: svg('<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>'),
-    cartao: svg('<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h4"/>'),
-  };
 
   // ---------- gráficos de gastos ----------
   const periodoDeCartao = (c, n) => periodShift(c, periodAt(c, new Date()), n);
@@ -2186,7 +2122,6 @@
   // ---------- backup ----------
   const blobToDataURL = b => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(r.error); r.readAsDataURL(b); });
   const dataURLToBlob = async u => (await fetch(u)).blob();
-
 
   async function photosSheet() {
     const recs = await IDB.all("receipts");
