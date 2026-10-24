@@ -12,6 +12,7 @@ const FILES = [
   "js/app.js",
   "js/issuers.js",
   "js/match.js",
+  "js/recorte.js",
   "js/receipt.js",
   "js/gemini.js",
   "js/drive.js",

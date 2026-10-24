@@ -80,6 +80,7 @@ styles.css            visual (identidade Ciclo, temas claro e escuro)
 manifest.webmanifest  nome, ícones e cores do app instalado
 sw.js                 service worker: guarda o app para uso offline
 js/app.js             telas, cartões, períodos, cofre, backup
+js/recorte.js         recorte automático da foto do cupom (acha o papel e endireita; sem tela, com testes)
 js/receipt.js         leitura do cupom no celular (OCR) e interpretação do texto
 js/gemini.js          leitura de cupons e cartões pelo Gemini (opcional)
 js/drive.js           backup no Google Drive (opcional): montagem do backup, regras de quando salvar e chamada ao script
