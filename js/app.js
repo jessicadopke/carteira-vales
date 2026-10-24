@@ -701,6 +701,7 @@
       <div class="section-head"><h2>Leitura de fotos</h2></div>
       <div class="menu">
         <button data-act="m-gemini"><span class="t">Gemini</span><span class="s">${S.meta.gemini && S.meta.gemini.enabled && S.meta.gemini.key ? "Ligado: cupons e cartões são lidos pelo Gemini, com o leitor do celular como reserva." : "Desligado: cupons e cartões são lidos só no celular, sem internet."}</span></button>
+        <button data-act="recorte-auto"><span class="t">Recortar o cupom sem perguntar</span><span class="s">${Recorte.autoLigado(S.meta) ? "Ligado: o app recorta a foto do cupom sozinho e mostra o recorte depois da leitura." : "Desligado: antes de ler, o app mostra o recorte para você conferir e ajustar."}</span></button>
       </div>
       <div class="section-head"><h2>Avisos</h2></div>
       ${renderAvisoCredito()}
@@ -1674,22 +1675,23 @@
   }
   function nextScan() { const job = scanQueue.shift(); if (job) scanOne(job.file, job.cardId); }
 
-  async function scanOne(file, presetCardId) {
+  async function scanOne(file, presetCardId, extra = {}) {
     const url = URL.createObjectURL(file);
     let alive = true;
+    const loaderHTML = `
+        <div class="loading"><span class="spin"></span><span id="scanStatus">Preparando…</span></div>
+        <div class="progress" style="margin-top:10px"><span id="scanBar"></span></div>
+        <div class="btnrow" style="margin-top:12px"><button class="btn" id="scanStop">Preencher à mão</button></div>`;
     const remaining = scanQueue.length;
     const sheet = openSheet(`
       <h3>Ler cupom${remaining ? ` <span class="hint num">(mais ${remaining} na fila)</span>` : ""}</h3>
       <img class="receipt-img" src="${url}" alt="Foto do cupom">
-      <div id="scanBody">
-        <div class="loading"><span class="spin"></span><span id="scanStatus">Preparando…</span></div>
-        <div class="progress" style="margin-top:10px"><span id="scanBar"></span></div>
-        <div class="btnrow" style="margin-top:12px"><button class="btn" id="scanStop">Preencher à mão</button></div>
-      </div>`);
+      <div id="scanBody">${loaderHTML}</div>`);
     const ctl = window.AbortController ? new AbortController() : null;
     sheetCleanup = () => { alive = false; ctl && ctl.abort(); URL.revokeObjectURL(url); scanQueue.length = 0; };
     const stored = shrink(file);
-    $("scanStop").addEventListener("click", async () => { alive = false; ctl && ctl.abort(); reviewForm(sheet, await stored, presetCardId, null, "Preencha os dados do cupom.", ""); });
+    const bindStop = () => $("scanStop").addEventListener("click", async () => { alive = false; ctl && ctl.abort(); reviewForm(sheet, await stored, presetCardId, null, "Preencha os dados do cupom.", ""); });
+    bindStop();
 
     // 1º: Gemini, se estiver ligado, com chave e com internet. Se falhar, segue para o leitor do celular.
     // "Como foi lido" (modelos tentados, erros e tempos) aparece na conferência, para entender demora ou falha.
@@ -1734,22 +1736,91 @@
     const labels = { "preparando a foto": "Preparando a foto…", "loading tesseract core": "Carregando o leitor…", "initializing tesseract": "Carregando o leitor…", "loading language traineddata": "Carregando o português…", "initializing api": "Carregando o leitor…", "recognizing text": "Lendo o texto do cupom…" };
     if (geminiFail) $("scanStatus").textContent = `${geminiFail} Usando o leitor do celular…`;
     try {
+      // Recorte (só no leitor do celular): acha o papel e deixa conferir os cantos antes de ler.
+      const info = { ms: {} };
+      const opts = { info };
+      if (extra.semRecorte) info.motivo = "pedido: ler sem recorte";
+      else {
+        if ($("scanStatus")) $("scanStatus").textContent = "Procurando o cupom na foto…";
+        const det = await ReceiptReader.detectar(file).catch(() => null);
+        if (!alive || !$("scanBody")) return;
+        if (det) info.ms = { ...det.ms };
+        if (!det || !det.cantos) { info.motivo = "não achei o papel"; }
+        else if (!Recorte.diferenteDaMoldura(det.cantos, det.larg, det.alt)) { info.motivo = "a foto já está enquadrada"; }
+        else if (Recorte.autoLigado(S.meta)) opts.cantos = det.cantos;
+        else {
+          const r = await confirmarRecorte(sheet, url, det);
+          if (!alive || !$("scanBody")) return;
+          $("scanBody").innerHTML = loaderHTML; bindStop();
+          if (r.cantos) opts.cantos = r.cantos; else info.motivo = "você escolheu ler a foto inteira";
+        }
+      }
       const text = await ReceiptReader.readText(file, (status, p) => {
         if (!alive || !$("scanStatus")) return;
         $("scanStatus").textContent = labels[status] || "Lendo…";
         $("scanBar").style.width = Math.round((status === "recognizing text" ? 0.3 + p * 0.7 : p * 0.3) * 100) + "%";
-      });
+      }, opts);
       if (!alive || !$("scanBody")) return;
       const parsed = ReceiptReader.parse(text);
-      parsed.how = `${geminiLog ? geminiLog + " " : ""}Leitor do celular. Total: ${secs()}.`;
+      parsed.how = `${geminiLog ? geminiLog + " " : ""}Leitor do celular. ${info.texto || ""} Total: ${secs()}.`;
+      // recorte usado automaticamente: mostra a miniatura e deixa ler de novo sem ele
+      if (info.cantos && Recorte.autoLigado(S.meta)) parsed.recorteMini = info.miniatura;
       const empty = !parsed.found.length;
       const prefix = geminiFail ? `Gemini: ${geminiFail} A foto foi lida pelo leitor do celular. ` : "";
       reviewForm(sheet, await stored, presetCardId, parsed, empty ? prefix + "Não encontrei valores nesta foto. Confira se o cupom está inteiro, reto e bem iluminado, ou preencha à mão." : (prefix ? prefix + "Confira os valores com atenção." : null), text);
+      const again = sheet.querySelector("#rNoCrop");
+      if (again) again.addEventListener("click", () => { sheetCleanup = null; scanOne(file, presetCardId, { semRecorte: true }); });
     } catch (e) {
       console.error(e);
       if (!alive || !$("scanBody")) return;
       reviewForm(sheet, await stored, presetCardId, null, "Não foi possível ler a foto. Preencha os dados do cupom.", "");
     }
+  }
+
+  // Passo de conferência do recorte: contorno sobre a foto e 4 pontos para arrastar com o dedo.
+  // Resolve com { cantos } (em pixels da foto) ou { inteira: true }.
+  function confirmarRecorte(sheet, url, det) {
+    return new Promise(resolve => {
+      const body = sheet.querySelector("#scanBody"), foto = sheet.querySelector(".receipt-img");
+      if (foto) foto.hidden = true;
+      body.innerHTML = `
+        <p class="hint">Achei o cupom na foto. Se o contorno não estiver certo, arraste os pontos com o dedo.</p>
+        <div class="crop" id="crop" style="max-width:${Math.round(360 * det.larg / det.alt)}px">
+          <img src="${url}" alt="Foto do cupom com o contorno do recorte" draggable="false">
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon id="cropPoly"></polygon></svg>
+          ${[0, 1, 2, 3].map(i => `<button type="button" class="crop-h" data-i="${i}" aria-label="Ponto ${i + 1} de 4 do recorte"></button>`).join("")}
+        </div>
+        <div class="btnrow">
+          <button class="btn primary" type="button" id="cropOk">Usar recorte</button>
+          <button class="btn" type="button" id="cropFull">Ler a foto inteira</button>
+          <button class="btn" type="button" id="cropRedo">Refazer sozinho</button>
+        </div>`;
+      const box = $("crop"), hs = [...box.querySelectorAll(".crop-h")];
+      let cur = det.cantos.map(p => ({ ...p }));
+      const pct = (v, n) => (v / Math.max(1, n - 1) * 100);
+      const draw = () => {
+        $("cropPoly").setAttribute("points", cur.map(p => `${pct(p.x, det.larg)},${pct(p.y, det.alt)}`).join(" "));
+        hs.forEach((h, i) => { h.style.left = pct(cur[i].x, det.larg) + "%"; h.style.top = pct(cur[i].y, det.alt) + "%"; });
+      };
+      draw();
+      hs.forEach(h => {
+        const i = +h.dataset.i;
+        h.addEventListener("pointerdown", e => { e.preventDefault(); h.setPointerCapture(e.pointerId); h.classList.add("on"); });
+        h.addEventListener("pointermove", e => {
+          if (!h.classList.contains("on")) return;
+          const r = box.getBoundingClientRect();
+          const novo = cur.map(p => ({ ...p }));
+          novo[i] = { x: (e.clientX - r.left) / r.width * (det.larg - 1), y: (e.clientY - r.top) / r.height * (det.alt - 1) };
+          const ok = Recorte.validar(novo, det.larg, det.alt); // trava dentro da foto; cruzado não passa
+          if (ok) { cur = ok; draw(); }
+        });
+        const solta = () => h.classList.remove("on");
+        h.addEventListener("pointerup", solta); h.addEventListener("pointercancel", solta);
+      });
+      $("cropOk").addEventListener("click", () => { if (foto) foto.hidden = false; resolve({ cantos: cur }); });
+      $("cropFull").addEventListener("click", () => { if (foto) foto.hidden = false; resolve({ inteira: true }); });
+      $("cropRedo").addEventListener("click", () => { cur = det.cantos.map(p => ({ ...p })); draw(); });
+    });
   }
 
   // Escolha do cartão pelo cupom: js/match.js (funções puras, com testes)
@@ -1920,6 +1991,7 @@
       </div>` : (suggestLine ? `<div class="found">${suggestLine}</div>` : "");
     sheet.querySelector("#scanBody").outerHTML = `
       ${msg ? `<div class="notice">${esc(msg)}</div>` : ""}
+      ${d.recorteMini ? `<div class="found recorte-usado"><img src="${d.recorteMini}" alt="Recorte usado na leitura"><span>O app recortou a foto antes de ler.<br><button type="button" class="btn small" id="rNoCrop">Ler de novo sem recorte</button></span></div>` : ""}
       ${summary}
       ${unknownHTML}
       <form id="rForm" class="sform">
@@ -2422,6 +2494,7 @@
       case "more-tx": S.txLimit += 100; $("txArea").innerHTML = renderTxArea(); break;
       case "lock": lockVault("Cofre trancado."); break;
       case "eye": toggleEye(); break;
+      case "recorte-auto": run(() => Store.setMeta({ ...S.meta, recorteAuto: !Recorte.autoLigado(S.meta) })); break;
       case "install": installApp(); break;
       case "m-backup": backupSheet(); break;
       case "export-csv": exportarPlanilha(); break;
