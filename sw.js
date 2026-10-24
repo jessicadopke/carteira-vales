@@ -11,6 +11,7 @@ const FILES = [
   "manifest.webmanifest",
   "js/app.js",
   "js/app/util.js",
+  "js/app/estado.js",
   "js/issuers.js",
   "js/match.js",
   "js/recorte.js",

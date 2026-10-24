@@ -1,4 +1,5 @@
 import { $, brl, CATS, delta, esc, explain, fmtDay, fmtInput, fold, ICON, isoDay, ISSUERS, issuerStyle, MANY, midnight, mkDate, monthKey, MONTHS, parseMoney, shortDate, toast, todayISO, TYPES, uid } from "./app/util.js";
+import { cardById, holders, lastTxDate, S, sortedCards, txSort, visibleCards } from "./app/estado.js";
 
 (() => {
   "use strict";
@@ -219,19 +220,6 @@ import { $, brl, CATS, delta, esc, explain, fmtDay, fmtInput, fold, ICON, isoDay
     const i = S[k].findIndex(x => x.id === obj.id);
     if (i >= 0) S[k][i] = obj; else S[k].push(obj);
   }
-
-  // ---------- estado ----------
-  const S = {
-    cards: [], txs: [], meta: {}, loaded: false,
-    view: { name: "home" }, tab: "home", person: null, periodOffset: 0, gfOffset: 0, gfView: "categorias", busy: false, skipped: new Set(), cardQuery: "", groups: {}, txQuery: "", txLimit: 100,
-    key: null, plain: {}, plainSig: {}, reveal: new Set(), lockTimer: null, installEvt: null,
-  };
-  const cardById = id => S.cards.find(c => c.id === id);
-  const sortedCards = () => [...S.cards].sort((a, b) => (a.holder || "").localeCompare(b.holder || "", "pt-BR") || (a.createdAt || 0) - (b.createdAt || 0));
-  const visibleCards = () => sortedCards().filter(c => S.person === null || (c.holder || "") === S.person);
-  const holders = () => [...new Set(S.cards.map(c => c.holder || ""))].sort((a, b) => a.localeCompare(b, "pt-BR"));
-  const txSort = (a, b) => (b.date || "").localeCompare(a.date || "") || (b.createdAt || 0) - (a.createdAt || 0);
-  const lastTxDate = cardId => S.txs.filter(t => t.cardId === cardId).reduce((m, t) => (t.date > m ? t.date : m), "");
 
   // ---------- ações ----------
   async function run(fn, okMsg) {
